@@ -128,6 +128,7 @@ extern "C" void app_main(void)
                 switch (rpt_ID)
                 {
                     case SH2_GAME_ROTATION_VECTOR:
+                        euler = imu.rpt.rv_game.get_euler();
                         euler_data.push_back(imu.rpt.rv_game.get_euler());
                         timestamps.push_back(current_timestamp); // Store timestamp
                         //ESP_LOGI(TAG, "Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler.x, euler.y, euler.z);
@@ -165,12 +166,12 @@ extern "C" void app_main(void)
 
 
     // Create the vector logging task
-    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 2048, NULL, 1, NULL, APP_CPU_NUM);
+    /*BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 2048, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create vector logging task!");
     } else {
         ESP_LOGI(TAG, "Vector logging task started.");
-    }
+    }*/
 
     while (1)
     {
