@@ -35,7 +35,9 @@ void measure_datarate(void *pvParameters)
             latest_timestamp = 0;
         }
         
-        ESP_LOGI(TAG, "Time in seconds with counter %f, Latest Datapoint %lld, Euler Vector size: %d, LinAcc Vector Size: %d, Free Heap Size %u", counter, latest_timestamp, euler_data.size(), lin_accel_data.size(),free_heap_size);
+        ESP_LOGI(TAG, "Time (last update) %lld, Euler Vector size: %d, LinAcc Vector Size: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), lin_accel_data.size(), free_heap_size);
+        ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
+        ESP_LOGI(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel_data.back().x, lin_accel_data.back().y, lin_accel_data.back().z);
         vTaskDelay(pdMS_TO_TICKS(100)); // Delay for 500ms
     }
 }
@@ -62,6 +64,7 @@ extern "C" void app_main(void)
     // register callback to execute for all reports, 2 different methods
 
     // method 1, void input param:
+    /*
     imu.register_cb(
             []()
             {
@@ -107,10 +110,10 @@ extern "C" void app_main(void)
                     lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
                     //ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);
                 }
-            });
+            }); */
 
     // method 2, report ID param (comment method 1 out before commenting this in):
-    /*
+    
     imu.register_cb(
             [](uint8_t rpt_ID)
             {
@@ -119,33 +122,36 @@ extern "C" void app_main(void)
                 static bno08x_accel_t grav;
                 static bno08x_accel_t ang_accel;
                 static bno08x_accel_t lin_accel;
+                
+                int64_t current_timestamp = esp_timer_get_time(); // Get timestamp in microseconds
 
                 switch (rpt_ID)
                 {
                     case SH2_GAME_ROTATION_VECTOR:
-                        euler = imu.rpt.rv_game.get_euler();
-                        ESP_LOGW(TAG, "Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler.x, euler.y,
-                                euler.z);
+                        euler_data.push_back(imu.rpt.rv_game.get_euler());
+                        timestamps.push_back(current_timestamp); // Store timestamp
+                        //ESP_LOGI(TAG, "Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler.x, euler.y, euler.z);
                         break;
 
                     case SH2_CAL_GYRO:
                         velocity = imu.rpt.cal_gyro.get();
-                        ESP_LOGW(TAG, "Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s]", velocity.x, velocity.y, velocity.z);
+                        //ESP_LOGW(TAG, "Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s]", velocity.x, velocity.y, velocity.z);
                         break;
 
                     case SH2_GRAVITY:
                         grav = imu.rpt.gravity.get();
-                        ESP_LOGW(TAG, "Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2]", grav.x, grav.y, grav.z);
+                        //ESP_LOGW(TAG, "Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2]", grav.x, grav.y, grav.z);
                         break;
 
                     case SH2_ACCELEROMETER:
                         ang_accel = imu.rpt.accelerometer.get();
-                        ESP_LOGW(TAG, "Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", ang_accel.x, ang_accel.y, ang_accel.z);
+                        //ESP_LOGW(TAG, "Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", ang_accel.x, ang_accel.y, ang_accel.z);
                         break;
 
                     case SH2_LINEAR_ACCELERATION:
-                        lin_accel = imu.rpt.accelerometer.get();
-                        ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);
+                        //lin_accel = imu.rpt.accelerometer.get();
+                        lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
+                        //ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);
                         break;
 
                     default:
@@ -154,7 +160,7 @@ extern "C" void app_main(void)
                 }
             });
 
-    */
+    
 
 
 
