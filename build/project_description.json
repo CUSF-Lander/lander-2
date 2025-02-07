@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "lander-2",
-    "project_version":    "6f959cd-dirty",
+    "project_version":    "cfcd08e-dirty",
     "project_path":       "/Users/clementtong/Desktop/Programming2/Lander-FlightComputer-1/lander-2",
     "idf_path":           "/Users/clementtong/esp/v5.4/esp-idf",
     "build_dir":          "/Users/clementtong/Desktop/Programming2/Lander-FlightComputer-1/lander-2/build",

@@ -34,10 +34,11 @@ void measure_datarate(void *pvParameters)
         } else {
             latest_timestamp = 0;
         }
-        
-        ESP_LOGI(TAG, "Time (last update) %lld, Euler Vector size: %d, LinAcc Vector Size: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), lin_accel_data.size(), free_heap_size);
-        ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
-        ESP_LOGI(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel_data.back().x, lin_accel_data.back().y, lin_accel_data.back().z);
+        //ESP_LOGI(TAG, "ABOUT TO PRINT");
+        ESP_LOGI(TAG, "Time (last update) %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
+        //todo: error not handled when vector size is 0
+        //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
+        //ESP_LOGI(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel_data.back().x, lin_accel_data.back().y, lin_accel_data.back().z);
         vTaskDelay(pdMS_TO_TICKS(100)); // Delay for 500ms
     }
 }
@@ -54,11 +55,11 @@ extern "C" void app_main(void)
     }
 
     // enable game rotation vector and calibrated gyro reports
-    imu.rpt.rv_game.enable(2500UL); // tested up to 1000UL with no issues - 100,000us == 100ms report interval //originally 100000UL
-    //imu.rpt.cal_gyro.enable(5000UL);
-    //imu.rpt.gravity.enable(5000UL);
-    //imu.rpt.accelerometer.enable(5000UL);
-    imu.rpt.linear_accelerometer.enable(2500UL);
+    imu.rpt.rv_game.enable(7500UL); // tested up to 1000UL with no issues - 100,000us == 100ms report interval //originally 100000UL
+    imu.rpt.cal_gyro.enable(7500UL);
+    imu.rpt.gravity.enable(7500UL);
+    imu.rpt.accelerometer.enable(7500UL);
+    imu.rpt.linear_accelerometer.enable(7500UL);
     // see BNO08x::bno08x_reports_t for all possible reports to enable
 
     // register callback to execute for all reports, 2 different methods
@@ -129,23 +130,27 @@ extern "C" void app_main(void)
                 {
                     case SH2_GAME_ROTATION_VECTOR:
                         euler = imu.rpt.rv_game.get_euler();
-                        euler_data.push_back(imu.rpt.rv_game.get_euler());
+                        euler_data.push_back(euler);
                         timestamps.push_back(current_timestamp); // Store timestamp
                         //ESP_LOGI(TAG, "Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler.x, euler.y, euler.z);
                         break;
 
                     case SH2_CAL_GYRO:
                         velocity = imu.rpt.cal_gyro.get();
+                        velocity_data.push_back(velocity);
+
                         //ESP_LOGW(TAG, "Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s]", velocity.x, velocity.y, velocity.z);
                         break;
 
                     case SH2_GRAVITY:
                         grav = imu.rpt.gravity.get();
+                        gravity_data.push_back(grav);
                         //ESP_LOGW(TAG, "Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2]", grav.x, grav.y, grav.z);
                         break;
 
                     case SH2_ACCELEROMETER:
                         ang_accel = imu.rpt.accelerometer.get();
+                        ang_accel_data.push_back(ang_accel);
                         //ESP_LOGW(TAG, "Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", ang_accel.x, ang_accel.y, ang_accel.z);
                         break;
 
@@ -164,14 +169,14 @@ extern "C" void app_main(void)
     
 
 
-
+    vTaskDelay(500UL / portTICK_PERIOD_MS); //to ensure the first data is collected before the vector logging task starts - not a robust solution
     // Create the vector logging task
-    /*BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 2048, NULL, 1, NULL, APP_CPU_NUM);
+    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 2048, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create vector logging task!");
     } else {
         ESP_LOGI(TAG, "Vector logging task started.");
-    }*/
+    }
 
     while (1)
     {
