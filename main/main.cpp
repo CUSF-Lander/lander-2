@@ -7,6 +7,8 @@ static const constexpr char* TAG = "Main";
 
 float counter;
 
+char pmem[512] = {0}; // Buffer to store the CPU usage data
+
 // Data storage (using vectors for dynamic storage)
 std::vector<bno08x_euler_angle_t> euler_data;
 std::vector<bno08x_gyro_t> velocity_data;
@@ -35,6 +37,8 @@ void measure_datarate(void *pvParameters)
             latest_timestamp = 0;
         }
         //ESP_LOGI(TAG, "ABOUT TO PRINT");
+        vTaskGetRunTimeStats(pmem);
+        ESP_LOGI(TAG, "CPU Usage: %s", pmem);
         ESP_LOGI(TAG, "Time (last update) %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
@@ -169,7 +173,7 @@ extern "C" void app_main(void)
     
 
 
-    vTaskDelay(500UL / portTICK_PERIOD_MS); //to ensure the first data is collected before the vector logging task starts - not a robust solution
+    vTaskDelay(1000UL / portTICK_PERIOD_MS); //to ensure the first data is collected before the vector logging task starts - not a robust solution
     // Create the vector logging task
     BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 2048, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_task != pdPASS) {
