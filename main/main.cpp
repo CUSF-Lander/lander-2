@@ -37,13 +37,13 @@ void measure_datarate(void *pvParameters)
             latest_timestamp = 0;
         }
         //ESP_LOGI(TAG, "ABOUT TO PRINT");
-        vTaskGetRunTimeStats(pmem);
-        ESP_LOGI(TAG, "CPU Usage: %s", pmem);
-        ESP_LOGI(TAG, "Time (last update) %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
+        /*vTaskGetRunTimeStats(pmem);
+        ESP_LOGI(TAG, "CPU Usage: %s", pmem);*/
+        ESP_LOGI(TAG, "Seconds since boot (s): %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
         //ESP_LOGI(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel_data.back().x, lin_accel_data.back().y, lin_accel_data.back().z);
-        vTaskDelay(pdMS_TO_TICKS(100)); // Delay for 500ms
+        vTaskDelay(pdMS_TO_TICKS(500)); // Delay for 500ms
     }
 }
 
@@ -59,11 +59,12 @@ extern "C" void app_main(void)
     }
 
     // enable game rotation vector and calibrated gyro reports
-    imu.rpt.rv_game.enable(7500UL); // tested up to 1000UL with no issues - 100,000us == 100ms report interval //originally 100000UL
-    imu.rpt.cal_gyro.enable(7500UL);
-    imu.rpt.gravity.enable(7500UL);
-    imu.rpt.accelerometer.enable(7500UL);
-    imu.rpt.linear_accelerometer.enable(7500UL);
+    int report_rate = 5000UL; // 5500us == 5ms report interval
+    imu.rpt.rv_game.enable(report_rate); // tested up to 1000UL with no issues - 100,000us == 100ms report interval //originally 100000UL
+    imu.rpt.cal_gyro.enable(report_rate);
+    imu.rpt.gravity.enable(report_rate);
+    imu.rpt.accelerometer.enable(report_rate);
+    imu.rpt.linear_accelerometer.enable(report_rate);
     // see BNO08x::bno08x_reports_t for all possible reports to enable
 
     // register callback to execute for all reports, 2 different methods
