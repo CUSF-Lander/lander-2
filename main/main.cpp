@@ -2,6 +2,7 @@
 #include "BNO08x.hpp"
 //#include <esp_system.h> // Include for esp_cpu_get_load
 #include <esp_heap_caps.h>
+#include "globalvars.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -10,6 +11,7 @@ float counter;
 char pmem[512] = {0}; // Buffer to store the CPU usage data
 
 // Data storage (using vectors for dynamic storage)
+
 std::vector<bno08x_euler_angle_t> euler_data;
 std::vector<bno08x_gyro_t> velocity_data;
 std::vector<bno08x_accel_t> gravity_data;
@@ -17,9 +19,14 @@ std::vector<bno08x_accel_t> ang_accel_data;
 std::vector<bno08x_accel_t> lin_accel_data;
 std::vector<int64_t> timestamps; // Store timestamps for each data point
 
+
+
+
+
 // RTOS Task to log the size of the vector every 500ms
 void measure_datarate(void *pvParameters)
 {   
+    
     while (1) {
         counter += 0.1;
         int64_t latest_timestamp;
@@ -50,6 +57,9 @@ void measure_datarate(void *pvParameters)
 extern "C" void app_main(void)
 {
     static BNO08x imu;
+
+    latest_timestamp = 100; //for fun - to see if it works
+    ESP_LOGI(TAG, "latest_timestamp %lld", latest_timestamp);
 
     // initialize imu
     if (!imu.initialize())
