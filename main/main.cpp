@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include "BNO08x.hpp"
 //#include <esp_system.h> // Include for esp_cpu_get_load
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
