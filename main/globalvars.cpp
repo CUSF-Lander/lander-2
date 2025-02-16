@@ -11,3 +11,4 @@ bno08x_accel_t latest_gravity_data;
 bno08x_accel_t latest_ang_accel_data;
 bno08x_accel_t latest_lin_accel_data;
 int64_t latest_timestamp = 0; // Initialize timestamp to 0
+int32_t euler_counter = 0; // Initialize counter to 0

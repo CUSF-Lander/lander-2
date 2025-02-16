@@ -12,6 +12,7 @@ extern bno08x_accel_t latest_gravity_data;
 extern bno08x_accel_t latest_ang_accel_data;
 extern bno08x_accel_t latest_lin_accel_data;
 extern int64_t latest_timestamp; // Store timestamps for each data point
+extern int32_t euler_counter;
 
 // Data storage (using vectors for dynamic storage)
 

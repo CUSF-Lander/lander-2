@@ -3,33 +3,19 @@
 //#include <esp_system.h> // Include for esp_cpu_get_load
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
+#include "imu_init.hpp"
 
 static const constexpr char* TAG = "Main";
 
-int counter;
 
 char pmem[512] = {0}; // Buffer to store the CPU usage data
 
-// Data storage (using vectors for dynamic storage)
 
-/*std::vector<bno08x_euler_angle_t> euler_data;
-std::vector<bno08x_gyro_t> velocity_data;
-std::vector<bno08x_accel_t> gravity_data;
-std::vector<bno08x_accel_t> ang_accel_data;
-std::vector<bno08x_accel_t> lin_accel_data;
-std::vector<int64_t> timestamps; // Store timestamps for each data point
-*/
-
-
-
-
-// RTOS Task to log the size of the vector every 500ms
+// RTOS Task to log the current stats of the data from the IMU every 500ms
 void measure_datarate(void *pvParameters)
 {   
     
     while (1) {
-        //counter += 0.1;
-        //int64_t latest_timestamp;
         size_t free_heap_size = esp_get_free_heap_size(); // check the amount of ram left
 
         //check CPU Usage
@@ -52,7 +38,7 @@ void measure_datarate(void *pvParameters)
         //ESP_LOGI(TAG, "Seconds since boot (s): %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
 
         //logging message with latest data
-        ESP_LOGI(TAG, "Seconds since boot (s): %lld, counter %i, Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", (latest_timestamp/1000000), counter, latest_euler_data.x, latest_euler_data.y, latest_euler_data.z, latest_velocity_data.x, latest_velocity_data.y, latest_velocity_data.z, latest_gravity_data.x, latest_gravity_data.y, latest_gravity_data.z, latest_ang_accel_data.x, latest_ang_accel_data.y, latest_ang_accel_data.z, latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z, free_heap_size);
+        ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", (latest_timestamp/1000000), euler_counter, latest_euler_data.x, latest_euler_data.y, latest_euler_data.z, latest_velocity_data.x, latest_velocity_data.y, latest_velocity_data.z, latest_gravity_data.x, latest_gravity_data.y, latest_gravity_data.z, latest_ang_accel_data.x, latest_ang_accel_data.y, latest_ang_accel_data.z, latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z, free_heap_size);
 
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
@@ -63,139 +49,9 @@ void measure_datarate(void *pvParameters)
 
 extern "C" void app_main(void)
 {
-    static BNO08x imu;
 
-    latest_timestamp = 100; //for fun - to see if it works
-    ESP_LOGI(TAG, "latest_timestamp %lld", latest_timestamp);
-
-    // initialize imu
-    if (!imu.initialize())
-    {
-        ESP_LOGE(TAG, "Init failure, returning from main.");
-        return;
-    }
-
-    // enable game rotation vector and calibrated gyro reports
-    int report_rate = 5000UL; // 5500us == 5ms report interval
-    imu.rpt.rv_game.enable(report_rate); // tested up to 1000UL with no issues - 100,000us == 100ms report interval //originally 100000UL
-    imu.rpt.cal_gyro.enable(report_rate);
-    imu.rpt.gravity.enable(report_rate);
-    imu.rpt.accelerometer.enable(report_rate);
-    imu.rpt.linear_accelerometer.enable(report_rate);
-    // see BNO08x::bno08x_reports_t for all possible reports to enable
-
-    // register callback to execute for all reports, 2 different methods
-
-    // method 1, void input param:
-    /*
-    imu.register_cb(
-            []()
-            {
-                int64_t current_timestamp = esp_timer_get_time(); // Get timestamp in microseconds
-
-                if (imu.rpt.rv_game.has_new_data())
-                {
-
-                    bno08x_euler_angle_t euler = imu.rpt.rv_game.get_euler();
-                    //counter+=1;
-                    euler_data.push_back(imu.rpt.rv_game.get_euler());
-                    timestamps.push_back(current_timestamp); // Store timestamp
-                    //ESP_LOGI(TAG, "Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Counter %i", euler.x, euler.y, euler.z, counter);
-                    //ESP_LOGI(TAG, "Euler Angle, Counter %i", counter);
-                }
-
-                if (imu.rpt.cal_gyro.has_new_data())
-                {
-                    //bno08x_gyro_t velocity = imu.rpt.cal_gyro.get();
-                    velocity_data.push_back(imu.rpt.cal_gyro.get());
-
-                    //ESP_LOGW(TAG, "Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s]", velocity.x, velocity.y, velocity.z);
-                }
-
-                if (imu.rpt.gravity.has_new_data())
-                {
-                    //bno08x_accel_t grav = imu.rpt.gravity.get();
-                    gravity_data.push_back(imu.rpt.gravity.get());
-
-                    //ESP_LOGW(TAG, "Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2]", grav.x, grav.y, grav.z);
-                }
-
-                if (imu.rpt.accelerometer.has_new_data())
-                {
-                    //bno08x_accel_t ang_accel = imu.rpt.accelerometer.get();
-                    ang_accel_data.push_back(imu.rpt.accelerometer.get());
-                    //ESP_LOGW(TAG, "Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", ang_accel.x, ang_accel.y, ang_accel.z);
-                }
-
-                if (imu.rpt.linear_accelerometer.has_new_data())
-                {
-                    //bno08x_accel_t lin_accel = imu.rpt.accelerometer.get();
-                    lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
-                    //ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);
-                }
-            }); */
-
-    // method 2, report ID param (comment method 1 out before commenting this in):
-    
-    imu.register_cb(
-            [](uint8_t rpt_ID)
-            {
-                static bno08x_euler_angle_t euler;
-                static bno08x_gyro_t velocity;
-                static bno08x_accel_t grav;
-                static bno08x_accel_t ang_accel;
-                static bno08x_accel_t lin_accel;
-                
-                int64_t current_timestamp = esp_timer_get_time(); // Get timestamp in microseconds
-
-                switch (rpt_ID)
-                {
-                    case SH2_GAME_ROTATION_VECTOR:
-                        euler = imu.rpt.rv_game.get_euler();
-                        latest_euler_data = euler;
-                        latest_timestamp = current_timestamp;
-                        counter +=1;
-                        //euler_data.push_back(euler);
-                        //timestamps.push_back(current_timestamp); // Store timestamp
-                        //ESP_LOGI(TAG, "Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler.x, euler.y, euler.z);
-                        break;
-
-                    case SH2_CAL_GYRO:
-                        velocity = imu.rpt.cal_gyro.get();
-                        // velocity_data.push_back(velocity);
-                        latest_velocity_data = velocity;
-
-                        //ESP_LOGW(TAG, "Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s]", velocity.x, velocity.y, velocity.z);
-                        break;
-
-                    case SH2_GRAVITY:
-                        grav = imu.rpt.gravity.get();
-                        //gravity_data.push_back(grav);
-                        latest_gravity_data = grav;
-                        //ESP_LOGW(TAG, "Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2]", grav.x, grav.y, grav.z);
-                        break;
-
-                    case SH2_ACCELEROMETER:
-                        ang_accel = imu.rpt.accelerometer.get();
-                        latest_ang_accel_data = ang_accel;
-                        //ang_accel_data.push_back(ang_accel);
-                        //ESP_LOGW(TAG, "Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", ang_accel.x, ang_accel.y, ang_accel.z);
-                        break;
-
-                    case SH2_LINEAR_ACCELERATION:
-                        lin_accel = imu.rpt.accelerometer.get();
-                        latest_lin_accel_data = lin_accel;
-                        //lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
-                        //ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);
-                        break;
-
-                    default:
-
-                        break;
-                }
-            });
-
-    
+    // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp   
+    imu_init();
 
 
     //vTaskDelay(1000UL / portTICK_PERIOD_MS); //to ensure the first data is collected before the vector logging task starts - not a robust solution

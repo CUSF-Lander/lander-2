@@ -10,7 +10,10 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/components/**",
                 "/Users/clementtong/esp/v5.4/esp-idf/components/newlib/platform_include",
-                "/Users/clementtong/esp/v5.4/esp-idf/components/log/include"
+                "/Users/clementtong/esp/v5.4/esp-idf/components/log/include",
+                "/Users/clementtong/esp/v5.4/esp-idf/components/newlib/platform_include",
+                "/Users/clementtong/esp/v5.4/esp-idf/components/newlib/platform_include",
+                "/Users/clementtong/esp/v5.4/esp-idf/components/newlib/platform_include"
             ],
             "browse": {
                 "path": [
