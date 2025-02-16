@@ -1,4 +1,2 @@
 # Setup Guide
-1. Clone the repository
-2. Run `git submodule init` 
-3. Run `git submodule update`
+1. Clone the repository by `git clone https://github.com/CUSF-Lander/lander-2.git --recurse-submodules`
