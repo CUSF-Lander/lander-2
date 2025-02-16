@@ -1,3 +1,0 @@
-[submodule "esp32_BNO08x"]
-    path = components/esp32_BNO08x
-    url = https://github.com/CUSF-Lander/esp32_BNO08x.git
