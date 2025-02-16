@@ -52,8 +52,6 @@ extern "C" void app_main(void)
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp   
     imu_init();
 
-
-    //vTaskDelay(1000UL / portTICK_PERIOD_MS); //to ensure the first data is collected before the vector logging task starts - not a robust solution
     // Create the vector logging task
     BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_task != pdPASS) {
