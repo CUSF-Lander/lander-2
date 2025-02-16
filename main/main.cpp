@@ -6,19 +6,19 @@
 
 static const constexpr char* TAG = "Main";
 
-float counter;
+int counter;
 
 char pmem[512] = {0}; // Buffer to store the CPU usage data
 
 // Data storage (using vectors for dynamic storage)
 
-std::vector<bno08x_euler_angle_t> euler_data;
+/*std::vector<bno08x_euler_angle_t> euler_data;
 std::vector<bno08x_gyro_t> velocity_data;
 std::vector<bno08x_accel_t> gravity_data;
 std::vector<bno08x_accel_t> ang_accel_data;
 std::vector<bno08x_accel_t> lin_accel_data;
 std::vector<int64_t> timestamps; // Store timestamps for each data point
-
+*/
 
 
 
@@ -28,8 +28,8 @@ void measure_datarate(void *pvParameters)
 {   
     
     while (1) {
-        counter += 0.1;
-        int64_t latest_timestamp;
+        //counter += 0.1;
+        //int64_t latest_timestamp;
         size_t free_heap_size = esp_get_free_heap_size(); // check the amount of ram left
 
         //check CPU Usage
@@ -38,15 +38,22 @@ void measure_datarate(void *pvParameters)
         esp_cpu_get_load(ESP_CPU_MAIN, &cpu_usage_core_0); // ESP_CPU_MAIN is Core 0
         esp_cpu_get_load(ESP_CPU_APP, &cpu_usage_core_1);  // ESP_CPU_APP is Core 1*/
 
-        if (timestamps.size() != 0) {
+        /*if (timestamps.size() != 0) {
             latest_timestamp = timestamps.back();
         } else {
             latest_timestamp = 0;
-        }
+        }*/
+
         //ESP_LOGI(TAG, "ABOUT TO PRINT");
         /*vTaskGetRunTimeStats(pmem);
         ESP_LOGI(TAG, "CPU Usage: %s", pmem);*/
-        ESP_LOGI(TAG, "Seconds since boot (s): %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
+        
+        //original logging message with vectors
+        //ESP_LOGI(TAG, "Seconds since boot (s): %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
+
+        //logging message with latest data
+        ESP_LOGI(TAG, "Seconds since boot (s): %lld, counter %i, Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", (latest_timestamp/1000000), counter, latest_euler_data.x, latest_euler_data.y, latest_euler_data.z, latest_velocity_data.x, latest_velocity_data.y, latest_velocity_data.z, latest_gravity_data.x, latest_gravity_data.y, latest_gravity_data.z, latest_ang_accel_data.x, latest_ang_accel_data.y, latest_ang_accel_data.z, latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z, free_heap_size);
+
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
         //ESP_LOGI(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel_data.back().x, lin_accel_data.back().y, lin_accel_data.back().z);
@@ -145,33 +152,40 @@ extern "C" void app_main(void)
                 {
                     case SH2_GAME_ROTATION_VECTOR:
                         euler = imu.rpt.rv_game.get_euler();
-                        euler_data.push_back(euler);
-                        timestamps.push_back(current_timestamp); // Store timestamp
+                        latest_euler_data = euler;
+                        latest_timestamp = current_timestamp;
+                        counter +=1;
+                        //euler_data.push_back(euler);
+                        //timestamps.push_back(current_timestamp); // Store timestamp
                         //ESP_LOGI(TAG, "Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler.x, euler.y, euler.z);
                         break;
 
                     case SH2_CAL_GYRO:
                         velocity = imu.rpt.cal_gyro.get();
-                        velocity_data.push_back(velocity);
+                        // velocity_data.push_back(velocity);
+                        latest_velocity_data = velocity;
 
                         //ESP_LOGW(TAG, "Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s]", velocity.x, velocity.y, velocity.z);
                         break;
 
                     case SH2_GRAVITY:
                         grav = imu.rpt.gravity.get();
-                        gravity_data.push_back(grav);
+                        //gravity_data.push_back(grav);
+                        latest_gravity_data = grav;
                         //ESP_LOGW(TAG, "Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2]", grav.x, grav.y, grav.z);
                         break;
 
                     case SH2_ACCELEROMETER:
                         ang_accel = imu.rpt.accelerometer.get();
-                        ang_accel_data.push_back(ang_accel);
+                        latest_ang_accel_data = ang_accel;
+                        //ang_accel_data.push_back(ang_accel);
                         //ESP_LOGW(TAG, "Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", ang_accel.x, ang_accel.y, ang_accel.z);
                         break;
 
                     case SH2_LINEAR_ACCELERATION:
-                        //lin_accel = imu.rpt.accelerometer.get();
-                        lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
+                        lin_accel = imu.rpt.accelerometer.get();
+                        latest_lin_accel_data = lin_accel;
+                        //lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
                         //ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);
                         break;
 
@@ -184,9 +198,9 @@ extern "C" void app_main(void)
     
 
 
-    vTaskDelay(1000UL / portTICK_PERIOD_MS); //to ensure the first data is collected before the vector logging task starts - not a robust solution
+    //vTaskDelay(1000UL / portTICK_PERIOD_MS); //to ensure the first data is collected before the vector logging task starts - not a robust solution
     // Create the vector logging task
-    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 2048, NULL, 1, NULL, APP_CPU_NUM);
+    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create vector logging task!");
     } else {
