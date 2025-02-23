@@ -13,7 +13,8 @@
                 "/Users/clementtong/esp/v5.4/esp-idf/components/log/include",
                 "/Users/clementtong/esp/v5.4/esp-idf/components/newlib/platform_include",
                 "/Users/clementtong/esp/v5.4/esp-idf/components/newlib/platform_include",
-                "/Users/clementtong/esp/v5.4/esp-idf/components/newlib/platform_include"
+                "/Users/clementtong/esp/v5.4/esp-idf/components/newlib/platform_include",
+                "C:/Users/rohan/esp/v5.4/esp-idf/components/log/include"
             ],
             "browse": {
                 "path": [
@@ -23,7 +24,10 @@
                 ],
                 "limitSymbolsToIncludedHeaders": false
             },
-            "compilerPath": "/path/to/toolchain-gcc"
+            "compilerPath": "/path/to/toolchain-gcc",
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json"
+            ]
         }
     ],
     "version": 4
