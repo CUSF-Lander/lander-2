@@ -9,11 +9,11 @@ void lora_init() {
     LoRa.setPins(5, 14, 2);
 
     if (!LoRa.begin(915E6)) {
-        ESP_LOGE(TAG, "LoRa initialization failed");
+        ESP_LOGE(TAG, "LoRa initialisation failed");
         return;
     }
 
-    ESP_LOGI(TAG, "LoRa Initialized");
+    ESP_LOGI(TAG, "LoRa Initialised");
 }
 
 void send_lora_data(const char *data) {
