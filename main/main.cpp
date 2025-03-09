@@ -3,6 +3,7 @@
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
 #include "imu_init.hpp"
+#include "servo.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -48,7 +49,8 @@ void measure_datarate(void *pvParameters)
 
 extern "C" void app_main(void)
 {
-
+    //testing without IMU on this branch
+    /*
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp   
     imu_init();
 
@@ -59,6 +61,11 @@ extern "C" void app_main(void)
     } else {
         ESP_LOGI(TAG, "Vector logging task started.");
     }
+    */
+    
+    // calling servo.hpp code within main
+    ESP_LOGI(TAG, "Initializing Servo System...");
+    servo_init();
 
     while (1)
     {
