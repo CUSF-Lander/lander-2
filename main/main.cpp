@@ -3,6 +3,7 @@
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
 #include "imu_init.hpp"
+#include "lora_init.h" // Added this to include the LoRa header
 
 static const constexpr char* TAG = "Main";
 
@@ -13,7 +14,6 @@ char pmem[512] = {0}; // Buffer to store the CPU usage data
 // RTOS Task to log the current stats of the data from the IMU every 500ms
 void measure_datarate(void *pvParameters)
 {   
-    
     while (1) {
         size_t free_heap_size = esp_get_free_heap_size(); // check the amount of ram left
 
@@ -48,9 +48,12 @@ void measure_datarate(void *pvParameters)
 
 extern "C" void app_main(void)
 {
-
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp   
     imu_init();
+
+    // Initialize LoRa
+    spi_init(); // Initialize SPI for LoRa communication
+    lora_config(); // Configure LoRa settings
 
     // Create the vector logging task
     BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
@@ -60,8 +63,12 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "Vector logging task started.");
     }
 
+    // Main loop for LoRa Data transmission
     while (1)
-    {
+    { 
+        // Send IMU data over LoRa
+        lora_send_imu_data(); // Send the IMU data over LoRa
+
         // delay time is irrelevant, we just don't want to trip WDT
         vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
     }
