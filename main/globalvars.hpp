@@ -14,6 +14,14 @@ extern bno08x_accel_t latest_lin_accel_data;
 extern int64_t latest_timestamp; // Store timestamps for each data point
 extern int32_t euler_counter;
 
+typedef struct {
+    double x;
+    double y;
+    double z;
+} latest_position_t;
+
+extern latest_position_t latest_position;
+
 // Data storage (using vectors for dynamic storage)
 
 
