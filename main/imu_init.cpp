@@ -20,7 +20,7 @@ void imu_init()
     }
 
     // IMU - set data reporting rates
-    int report_rate = 5000UL; // 5500us == 5ms report interval
+    int report_rate = 10000UL; // 5500us == 5ms report interval
     imu.rpt.rv_game.enable(report_rate); // tested up to 1000UL with no issues - 100,000us == 100ms report interval //originally 100000UL
     imu.rpt.cal_gyro.enable(report_rate);
     imu.rpt.gravity.enable(report_rate);
