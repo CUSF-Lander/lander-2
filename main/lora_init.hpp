@@ -1,14 +1,16 @@
-#ifndef LORA_INIT_HPP
-#define LORA_INIT_HPP
+//lora_init.h
 
-#include "driver/spi_master.h"
-#include "esp_log.h"
+#ifndef LORA_H
+#define LORA_H
+
 #include "driver/gpio.h"
-#include "LoRa.hpp"
 
-void lora_init();
-void send_lora_data(const char* data);
-void send_telemetry_data();
-void format_telemetry_data(char* buffer, size_t buffer_size);
+void spi_init();
+void lora_reset();
+void lora_config();
+void lora_send_imu_data();
+void lora_send(const char *data);
+uint8_t lora_read_reg(uint8_t reg);
+void lora_write_reg(uint8_t reg, uint8_t value);
 
-#endif
+#endif // LORA_H

@@ -3,7 +3,12 @@
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
 #include "imu_init.hpp"
-#include "lora_init.h" // Added this to include the LoRa header
+#include "lora_init.hpp"//Added this to include the LoRa header
+#define ESP_LOG_LEVEL ESP_LOG_INFO
+#include "esp_mac.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+
 
 static const constexpr char* TAG = "Main";
 
@@ -73,3 +78,5 @@ extern "C" void app_main(void)
         vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
     }
 }
+
+//C:\Users\Kkfil\esp\v5.4\esp-idf\export.bat
