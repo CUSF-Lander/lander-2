@@ -3,6 +3,7 @@
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
 #include "imu_init.hpp"
+#include "motor_init.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -122,6 +123,10 @@ extern "C" void app_main(void)
     } else {
         ESP_LOGI(TAG, "State estimation task started.");
     }
+
+    // Initialize the motor
+    initializeMotor(GPIO_NUM_4, RMT_CHANNEL_0);
+    //todo:code will never reach here as we are testing the motor in an infinite loop
 
     while (1)
     {
