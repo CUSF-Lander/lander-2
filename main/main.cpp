@@ -3,6 +3,7 @@
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
 #include "imu_init.hpp"
+#include "servo.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -105,27 +106,28 @@ extern "C" void app_main(void)
 
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
     //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
-    imu_init();
+    // imu_init();
 
-    // Create the vector logging task
-    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
-    if (measure_datarate_task != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create vector logging task!");
-    } else {
-        ESP_LOGI(TAG, "Vector logging task started.");
-    }
+    // // Create the vector logging task
+    // BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    // if (measure_datarate_task != pdPASS) {
+    //     ESP_LOGE(TAG, "Failed to create vector logging task!");
+    // } else {
+    //     ESP_LOGI(TAG, "Vector logging task started.");
+    // }
     
-    // Launch state estimation task
-    BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
-    if(state_estimation_task != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create state estimation task!");
-    } else {
-        ESP_LOGI(TAG, "State estimation task started.");
-    }
+    // // Launch state estimation task
+    // BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    // if(state_estimation_task != pdPASS) {
+    //     ESP_LOGE(TAG, "Failed to create state estimation task!");
+    // } else {
+    //     ESP_LOGI(TAG, "State estimation task started.");
+    // }
 
-    while (1)
-    {
-        // delay time is irrelevant, we just don't want to trip WDT
-        vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
-    }
+    // while (1)
+    // {
+    //     // delay time is irrelevant, we just don't want to trip WDT
+    //     vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
+    // }
+    testTest();
 }
