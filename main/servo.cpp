@@ -7,7 +7,7 @@
 #define I2C_MASTER_NUM         I2C_NUM_0
 #define I2C_MASTER_SDA_IO      22            // ESP32 Feather V2: SDA on GPIO22
 #define I2C_MASTER_SCL_IO      20            // ESP32 Feather V2: SCL on GPIO20
-#define I2C_MASTER_FREQ_HZ     400000
+#define I2C_MASTER_FREQ_HZ     100000
 #define PCA9685_ADDR           0x40          // Default I2C address for PCA9685
  
 static const char *TAG = "PCA9685_SETUP";
@@ -22,7 +22,6 @@ esp_err_t i2c_master_init() {
     conf.sda_pullup_en = GPIO_PULLUP_ENABLE;   // Ensure pull-ups are enabled (or use external resistors)
     conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
     conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
-    conf.clk_flags = 0;
  
     esp_err_t err = i2c_param_config(I2C_MASTER_NUM, &conf);
     if (err != ESP_OK) {
@@ -95,7 +94,13 @@ void testTest() {
     gpio_reset_pin(GPIO_NUM_2);
     gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
     gpio_set_level(GPIO_NUM_2, 1);
- 
+
+    // DO NOT TOUCH THIS - this is setup done by arduino pca9685 library that isnt done in espidf
+    pca9685_write8(0x00, 0x20); // MODE 1 Register
+    pca9685_write8(0x08, 0x29); // LED0_OFF_L
+    pca9685_write8(0x09, 0x02); // LED0_OFF_H
+    // Why these values? Idk ask chatgpt and look at the documentation
+
     esp_err_t err = i2c_master_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize I2C");
