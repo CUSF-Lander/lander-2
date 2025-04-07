@@ -38,7 +38,7 @@ void initializeMotor(gpio_num_t dshot_gpio, rmt_channel_t rmt_channel)
     // Calculate 5% throttle value
     // The valid throttle range is from MIN_THROTTLE (48) to MAX_THROTTLE (2047)
     // 5% of the usable range: MIN_THROTTLE + 0.05 * (MAX_THROTTLE - MIN_THROTTLE)
-    uint16_t five_percent_throttle = MIN_THROTTLE + (uint16_t)(0.05 * (MAX_THROTTLE - MIN_THROTTLE));
+    uint16_t five_percent_throttle = MIN_THROTTLE + (uint16_t)(0.25 * (MAX_THROTTLE - MIN_THROTTLE));
     
     ESP_LOGI(TAG, "Setting throttle to 5%% (value: %d)", five_percent_throttle);
     
