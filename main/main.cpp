@@ -106,7 +106,7 @@ extern "C" void app_main(void)
 
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
     //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
-    imu_init();
+    //imu_init(); //todo: commented for now only (IMU)
 
     // Create the vector logging task
     BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
@@ -125,7 +125,19 @@ extern "C" void app_main(void)
     }
 
     // Initialize the motor
-    initializeMotor(GPIO_NUM_4, RMT_CHANNEL_0);
+    /*void all_motor_init(void){
+        // Initialize the 2 motors with the specified GPIO pins and RMT channels
+        initializeMotor(GPIO_NUM_4, RMT_CHANNEL_0);
+        initializeMotor(GPIO_NUM_5, RMT_CHANNEL_1);
+    }*/
+
+    BaseType_t motor_task = xTaskCreatePinnedToCore(initializeMotor, "initialize 2 motors", 4096, NULL, 0, NULL, APP_CPU_NUM);
+    if(motor_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create motor task!");
+    } else {
+        ESP_LOGI(TAG, "motor task started.");
+    }
+
     //todo:code will never reach here as we are testing the motor in an infinite loop
 
     while (1)
