@@ -5,6 +5,7 @@
 #include "imu_init.hpp"
 #include "i2c/servo.hpp"
 #include "i2c/i2c_setup.hpp"
+#include "motor_init.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -121,18 +122,20 @@ void testServo() {
 
 extern "C" void app_main(void)
 {
+    i2c_master_init();
+    pca9685_init();
 
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
     //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
-    // imu_init();
+    //imu_init(); //todo: commented for now only (IMU)
 
-    // // Create the vector logging task
-    // BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
-    // if (measure_datarate_task != pdPASS) {
-    //     ESP_LOGE(TAG, "Failed to create vector logging task!");
-    // } else {
-    //     ESP_LOGI(TAG, "Vector logging task started.");
-    // }
+    // Create the vector logging task
+    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    if (measure_datarate_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create vector logging task!");
+    } else {
+        ESP_LOGI(TAG, "Vector logging task started.");
+    }
     
     // // Launch state estimation task
     // BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
@@ -147,10 +150,31 @@ extern "C" void app_main(void)
     //     // delay time is irrelevant, we just don't want to trip WDT
     //     vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
     // }
+
+    // Initialize the motor
+    /*void all_motor_init(void){
+        // Initialize the 2 motors with the specified GPIO pins and RMT channels
+        initializeMotor(GPIO_NUM_4, RMT_CHANNEL_0);
+        initializeMotor(GPIO_NUM_5, RMT_CHANNEL_1);
+    }*/
+
+    //code for RTOS Task
+    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 5, NULL, APP_CPU_NUM);
+    if(motor_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create motor task!");
+    } else {
+        ESP_LOGI(TAG, "motor task started.");
+    }
     
-    i2c_master_init();
 
-    pca9685_init();
+    //reverting to function based code for testing 
+    //init_2_motors();
 
-    testServo();
+    //todo:code will never reach here as we are testing the motor in an infinite loop
+
+    while (1)
+    {
+        // delay time is irrelevant, we just don't want to trip WDT
+        vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
+    }
 }
