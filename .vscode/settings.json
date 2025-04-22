@@ -41,7 +41,8 @@
         "typeinfo": "cpp",
         "unordered_map": "cpp",
         "variant": "cpp",
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "config,hpp": "cpp"
     },
-    "idf.portWin": "COM9"
+    "idf.portWin": "COM5"
 }

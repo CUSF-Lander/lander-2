@@ -3,7 +3,8 @@
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
 #include "imu_init.hpp"
-#include "servo.hpp"
+#include "i2c/servo.hpp"
+#include "i2c/i2c_setup.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -101,6 +102,23 @@ void state_estimation(void *pvParameters)
     }
 }
 
+void testServo() {
+    while(1){
+        
+        pca9685_set_servo_angle(1, 0);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        pca9685_set_servo_angle(1, 45);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        pca9685_set_servo_angle(1, 90);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        pca9685_set_servo_angle(1, 135);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        pca9685_set_servo_angle(1, 180);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        // 110-120 is the start point, 540-550 is the end point
+    }
+}
+
 extern "C" void app_main(void)
 {
 
@@ -129,5 +147,10 @@ extern "C" void app_main(void)
     //     // delay time is irrelevant, we just don't want to trip WDT
     //     vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
     // }
-    testTest();
+    
+    i2c_master_init();
+
+    pca9685_init();
+
+    testServo();
 }
