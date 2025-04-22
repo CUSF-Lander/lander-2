@@ -43,6 +43,5 @@
         "variant": "cpp",
         "algorithm": "cpp",
         "config,hpp": "cpp"
-    },
-    "idf.portWin": "COM5"
+    }
 }
