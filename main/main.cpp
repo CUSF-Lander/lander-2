@@ -3,6 +3,8 @@
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
 #include "imu_init.hpp"
+#include "i2c/servo.hpp"
+#include "i2c/i2c_setup.hpp"
 #include "motor_init.hpp"
 
 static const constexpr char* TAG = "Main";
@@ -101,8 +103,27 @@ void state_estimation(void *pvParameters)
     }
 }
 
+void testServo() {
+    while(1){
+        
+        pca9685_set_servo_angle(1, 0);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        pca9685_set_servo_angle(1, 45);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        pca9685_set_servo_angle(1, 90);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        pca9685_set_servo_angle(1, 135);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        pca9685_set_servo_angle(1, 180);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        // 110-120 is the start point, 540-550 is the end point
+    }
+}
+
 extern "C" void app_main(void)
 {
+    i2c_master_init();
+    pca9685_init();
 
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
     //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
@@ -116,13 +137,19 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "Vector logging task started.");
     }
     
-    // Launch state estimation task
-    BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
-    if(state_estimation_task != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create state estimation task!");
-    } else {
-        ESP_LOGI(TAG, "State estimation task started.");
-    }
+    // // Launch state estimation task
+    // BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    // if(state_estimation_task != pdPASS) {
+    //     ESP_LOGE(TAG, "Failed to create state estimation task!");
+    // } else {
+    //     ESP_LOGI(TAG, "State estimation task started.");
+    // }
+
+    // while (1)
+    // {
+    //     // delay time is irrelevant, we just don't want to trip WDT
+    //     vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
+    // }
 
     // Initialize the motor
     /*void all_motor_init(void){
@@ -142,8 +169,6 @@ extern "C" void app_main(void)
 
     //reverting to function based code for testing 
     //init_2_motors();
-
-    
 
     //todo:code will never reach here as we are testing the motor in an infinite loop
 

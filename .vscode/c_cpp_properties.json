@@ -25,7 +25,10 @@
                 ],
                 "limitSymbolsToIncludedHeaders": false
             },
-            "compilerPath": "/path/to/toolchain-gcc"
+            "compilerPath": "/path/to/toolchain-gcc",
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json"
+            ]
         }
     ],
     "version": 4
