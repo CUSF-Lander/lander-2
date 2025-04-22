@@ -131,17 +131,18 @@ extern "C" void app_main(void)
         initializeMotor(GPIO_NUM_5, RMT_CHANNEL_1);
     }*/
 
-    /* code for RTOS Task
-    BaseType_t motor_task = xTaskCreatePinnedToCore(initializeMotor, "initialize 2 motors", 4096, NULL, 0, NULL, APP_CPU_NUM);
+    //code for RTOS Task
+    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 5, NULL, APP_CPU_NUM);
     if(motor_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create motor task!");
     } else {
         ESP_LOGI(TAG, "motor task started.");
     }
-    */
+    
 
     //reverting to function based code for testing 
-    init_2_motors();
+    //init_2_motors();
+
     
 
     //todo:code will never reach here as we are testing the motor in an infinite loop
