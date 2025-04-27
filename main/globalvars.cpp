@@ -15,3 +15,4 @@ int64_t latest_timestamp = 0; // Initialize timestamp to 0
 int32_t euler_counter = 0; // Initialize counter to 0
 double temperature;
 double pressure;
+double altitude;

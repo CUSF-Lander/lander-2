@@ -5,6 +5,7 @@
 #include <cmath>
 #include "../config.hpp" // Includes I2C configuration
 #include "bmp390.hpp"     // Include the header file we will create
+#include <cmath> // for logf
 
 static const char *TAG = "BMP390";
 
@@ -229,8 +230,17 @@ esp_err_t bmp390_init() {
     return ESP_OK;
 }
 
+// Calculate height (meters) using isothermal model
+double calculateAltitude(double pressure, double temperatureCelsius) {
+    // Constants
+    constexpr double SEA_LEVEL_PRESSURE = 101325.0f; // Pa
+    constexpr double CONST = 29.271267f;             // Precomputed R/(g*M)
+    double temperatureKelvin = temperatureCelsius + 273.15f;
+    return CONST * temperatureKelvin * logf(SEA_LEVEL_PRESSURE / pressure);
+}
+
 // Read compensated temperature and pressure data
-esp_err_t bmp390_get_data(double *temperature, double *pressure) {
+esp_err_t bmp390_get_data(double *temperature, double *pressure, double *altitude) {
     if (!bmp390_initialized) {
         ESP_LOGE(TAG, "BMP390 not initialized.");
         return ESP_ERR_INVALID_STATE;
@@ -253,6 +263,7 @@ esp_err_t bmp390_get_data(double *temperature, double *pressure) {
     // Compensate raw values
     *temperature = bmp390_compensate_temp(raw_temp);
     *pressure = bmp390_compensate_press(raw_press);
+    *altitude = calculateAltitude(*pressure, *temperature); // Calculate altitude
 
     return ESP_OK;
 }

@@ -15,6 +15,7 @@ extern int64_t latest_timestamp; // Store timestamps for each data point
 extern int32_t euler_counter;
 extern double temperature;
 extern double pressure;
+extern double altitude;
 
 typedef struct {
     double x;
