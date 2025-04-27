@@ -18,27 +18,21 @@
 
 static const constexpr char* TAG = "Main";
 
-char pmem[512] = {0}; // Buffer to store the CPU usage data
+char pmem[512] = {0};
 
-// RTOS Task to log the current stats of the data from the IMU every 500ms
+// Task to log the current stats of the IMU data every 500ms.
 void measure_datarate(void *pvParameters)
-{   
+{
+    int iteration = 0;
     while (1) {
-        size_t free_heap_size = esp_get_free_heap_size(); // check the amount of ram left
-
-        // Check CPU Usage (commented as per original)
-        /*uint32_t cpu_usage_core_0 = 0;
-        uint32_t cpu_usage_core_1 = 0;
-        esp_cpu_get_load(ESP_CPU_MAIN, &cpu_usage_core_0); // ESP_CPU_MAIN is Core 0
-        esp_cpu_get_load(ESP_CPU_APP, &cpu_usage_core_1);  // ESP_CPU_APP is Core 1*/
+        iteration++;
+        ESP_LOGD(TAG, "measure_datarate: Starting iteration %d", iteration);
+        size_t free_heap_size = esp_get_free_heap_size(); // Check amount of free RAM
+        ESP_LOGD(TAG, "measure_datarate: Free heap size = %u", free_heap_size);
 
         // Ensure latest_timestamp is initialized
         int64_t latest_timestamp = 0;
-        /*if (timestamps.size() != 0) {
-            latest_timestamp = timestamps.back();
-        }*/
 
-        // Logging message with latest data
         ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", 
                  (latest_timestamp/1000000), euler_counter, 
                  latest_euler_data.x, latest_euler_data.y, latest_euler_data.z, 
@@ -48,24 +42,38 @@ void measure_datarate(void *pvParameters)
                  latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z, 
                  free_heap_size);
 
-        vTaskDelay(pdMS_TO_TICKS(500)); // Delay for 500ms
+        ESP_LOGD(TAG, "measure_datarate: Finished iteration %d", iteration);
+        vTaskDelay(pdMS_TO_TICKS(500)); // Delay 500ms
     }
 }
 
-// Receiving LoRa packets task
+// Task to receive LoRa packets.
 static void lora_receive_task(void* pvParameters) {
     char buffer[128];
     while (1) {
+        ESP_LOGD(TAG, "lora_receive_task: Waiting to receive packet");
         int len = lora_receive(buffer, sizeof(buffer));
         if (len > 0) {
             ESP_LOGI(TAG, "Received: %s", buffer);
+        } else {
+            ESP_LOGD(TAG, "lora_receive_task: No packet received in this cycle");
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+}
+
+// Task to send IMU data via LoRa.
+static void lora_send_task(void* pvParameters) {
+    while (1) { 
+        ESP_LOGD(TAG, "lora_send_task: Preparing to send IMU data");
+        lora_send_imu_data();
+        ESP_LOGD(TAG, "lora_send_task: Finished sending IMU data");
     }
 }
 
 extern "C" void app_main(void)
 {
+    ESP_LOGI(TAG, "Started app_main()");
     //imu_init();
     // Initialize LoRa
     spi_init();
@@ -76,25 +84,28 @@ extern "C" void app_main(void)
     config.bandwidth = 7;         // 125 kHz
     lora_config(&config);
 
-    // Create the vector logging task
+    // Create the IMU data logging task.
+    /*
     BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_task != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create vector logging task!");
+        ESP_LOGE(TAG, "Failed to create measure_datarate task!");
     } else {
-        ESP_LOGI(TAG, "Vector logging task started.");
+        ESP_LOGI(TAG, "measure_datarate task started.");
     }
 
-    // Create LoRa receive task
     BaseType_t receive_task = xTaskCreatePinnedToCore(lora_receive_task, "lora_receive", 4096, NULL, 1, NULL, APP_CPU_NUM);
     if (receive_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create LoRa receive task!");
     } else {
         ESP_LOGI(TAG, "LoRa receive task started.");
     }
-
-    while (1)
-    { 
-        lora_send_imu_data();
-        vTaskDelay(1000UL / portTICK_PERIOD_MS);
+    */
+    
+    // Create the LoRa send task.
+    BaseType_t send_task = xTaskCreatePinnedToCore(lora_send_task, "lora_send", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    if (send_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create LoRa send task!");
+    } else {
+        ESP_LOGI(TAG, "LoRa send task started.");
     }
 }
