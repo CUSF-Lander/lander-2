@@ -63,7 +63,7 @@ esp_err_t bmp390_init();
  * @param pressure Pointer to a double where the compensated pressure (in Pascals) will be stored.
  * @return esp_err_t ESP_OK on success, otherwise an error code (e.g., if sensor not initialized or I2C read fails).
  */
-esp_err_t bmp390_get_data(double *temperature, double *pressure);
+esp_err_t bmp390_get_data(double *temperature, double *pressure, double *altitude);
 
 
 #endif // BMP390_HPP

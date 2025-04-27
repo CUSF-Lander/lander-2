@@ -181,10 +181,10 @@ extern "C" void app_main(void)
         //TODO: Reposition the BMP390 code to be in a suitable RTOS task - currently runs every second in the main loop
         // Get Temperature and Pressure data
         // Pass the addresses of the variables to bmp390_get_data
-        esp_err_t result = bmp390_get_data(&temperature, &pressure);
+        esp_err_t result = bmp390_get_data(&temperature, &pressure, &altitude);
 
         if (result == ESP_OK) {
-            printf("Temperature: %.2f °C, Pressure: %.2f Pa\n", temperature, pressure);
+            printf("Temperature: %.2f °C, Pressure: %.2f Pa\n, Altitude: %.2f m", temperature, pressure, altitude);
         } else {
             printf("Failed to read data from BMP390 sensor\n");
         }
