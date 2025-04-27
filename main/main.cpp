@@ -6,6 +6,7 @@
 #include "i2c/servo.hpp"
 #include "i2c/i2c_setup.hpp"
 #include "motor_init.hpp"
+#include "i2c/bmp390.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -124,6 +125,7 @@ extern "C" void app_main(void)
 {
     i2c_master_init();
     pca9685_init();
+    bmp390_init();
 
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
     //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
@@ -175,6 +177,17 @@ extern "C" void app_main(void)
     while (1)
     {
         // delay time is irrelevant, we just don't want to trip WDT
-        vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
+
+        //TODO: Reposition the BMP390 code to be in a suitable RTOS task - currently runs every second in the main loop
+        // Get Temperature and Pressure data
+        // Pass the addresses of the variables to bmp390_get_data
+        esp_err_t result = bmp390_get_data(&temperature, &pressure);
+
+        if (result == ESP_OK) {
+            printf("Temperature: %.2f °C, Pressure: %.2f Pa\n", temperature, pressure);
+        } else {
+            printf("Failed to read data from BMP390 sensor\n");
+        }
+        vTaskDelay(1000UL / portTICK_PERIOD_MS); //originally 10000UL
     }
 }

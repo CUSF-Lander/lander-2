@@ -13,3 +13,5 @@ bno08x_accel_t latest_lin_accel_data;
 latest_position_t latest_position = {0.0, 0.0, 0.0};
 int64_t latest_timestamp = 0; // Initialize timestamp to 0
 int32_t euler_counter = 0; // Initialize counter to 0
+double temperature;
+double pressure;
