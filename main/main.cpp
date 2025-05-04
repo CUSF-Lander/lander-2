@@ -78,7 +78,7 @@ extern "C" void app_main(void)
     // Initialize LoRa
     spi_init();
     lora_config_t config = {};
-    config.frequency = 915000000; // 915 MHz
+    config.frequency = 905000000; // 915 MHz
     config.spreading_factor = 7;
     config.coding_rate = 5;       // 4/5
     config.bandwidth = 7;         // 125 kHz

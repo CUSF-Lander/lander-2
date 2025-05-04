@@ -18,16 +18,16 @@
 #define TAG "LoRa"
 
 #define PIN_MISO  12
-#define PIN_MOSI  11
-#define PIN_SCK   13
-#define PIN_CS    10
-#define PIN_RST   9
-#define PIN_DIO0  6
+#define PIN_MOSI  21
+#define PIN_SCK   5
+#define PIN_CS    15
+#define PIN_RST   14
+#define PIN_IRQ   27
 
 static spi_device_handle_t spi;
-
 // SPI transfer function (read or write)
 static uint8_t spi_transfer(uint8_t address, uint8_t value, bool read) {
+    ESP_LOGD(TAG, "spi_transfer: address=0x%02X, value=0x%02X, read=%d", address, value, read);
     spi_transaction_t trans = {};
     trans.flags = SPI_TRANS_USE_RXDATA | SPI_TRANS_USE_TXDATA;
     trans.length = 8;
@@ -43,7 +43,9 @@ static uint8_t spi_transfer(uint8_t address, uint8_t value, bool read) {
         ESP_LOGE(TAG, "SPI transfer failed: %s", esp_err_to_name(ret));
         return 0;
     }
-    return read ? trans.rx_data[0] : 0;
+    uint8_t result = read ? trans.rx_data[0] : 0;
+    ESP_LOGD(TAG, "spi_transfer: completed. result=0x%02X", result);
+    return result;
 }
 
 uint8_t lora_read_reg(uint8_t reg) {
@@ -193,6 +195,7 @@ int lora_receive(char* buffer, size_t max_len) {
 
 void lora_send_imu_data() {
     char payload[512];
+    ESP_LOGI(TAG, "Started sending IMU data");
     std::snprintf(payload, sizeof(payload),
                   "Time:%llds,Euler(x:%.2f,y:%.2f,z:%.2f),Vel(x:%.2f,y:%.2f,z:%.2f),"
                   "Grav(x:%.2f,y:%.2f,z:%.2f),AngAcc(x:%.2f,y:%.2f,z:%.2f),"
@@ -204,6 +207,9 @@ void lora_send_imu_data() {
                   latest_ang_accel_data.x, latest_ang_accel_data.y, latest_ang_accel_data.z,
                   latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z,
                   esp_get_free_heap_size());
-
+    ESP_LOGI(TAG, "About to send payload");
     lora_send(payload);
+    ESP_LOGI(TAG, "Finished sending IMU data");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    // add checksum function next
 }
