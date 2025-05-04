@@ -21,11 +21,13 @@ void imu_init()
 
     // IMU - set data reporting rates
     int report_rate = 10000UL; // 5500us == 5ms report interval
-    imu.rpt.rv_game.enable(report_rate); // tested up to 1000UL with no issues - 100,000us == 100ms report interval //originally 100000UL
+    //imu.rpt.rv_game.enable(report_rate); // tested up to 1000UL with no issues - 100,000us == 100ms report interval //originally 100000UL
+    imu.rpt.rv.enable(report_rate);  // Standard Rotation Vector instead of rv_game - this one fuses data with the magnetometer
     imu.rpt.cal_gyro.enable(report_rate);
     imu.rpt.gravity.enable(report_rate);
     imu.rpt.accelerometer.enable(report_rate);
     imu.rpt.linear_accelerometer.enable(report_rate);
+    imu.rpt.cal_magnetometer.enable(1000000UL); // 1000ms report interval - magnetometer calibration quality report
     // see BNO08x::bno08x_reports_t for all possible reports to enable
 
     // register callback to execute for all reports, 2 different methods
@@ -39,13 +41,14 @@ void imu_init()
                 static bno08x_accel_t grav;
                 static bno08x_accel_t ang_accel;
                 static bno08x_accel_t lin_accel;
+                static bno08x_magf_t mag_cal_quality;
                 
                 int64_t current_timestamp = esp_timer_get_time(); // Get timestamp in microseconds
 
                 switch (rpt_ID)
                 {
-                    case SH2_GAME_ROTATION_VECTOR:
-                        euler = imu.rpt.rv_game.get_euler();
+                    case SH2_ROTATION_VECTOR:
+                        euler = imu.rpt.rv.get_euler();
                         latest_euler_data = euler;
                         latest_timestamp = current_timestamp;
                         euler_counter +=1;
@@ -57,7 +60,7 @@ void imu_init()
                     case SH2_CAL_GYRO:
                         velocity = imu.rpt.cal_gyro.get();
                         // velocity_data.push_back(velocity);
-                        latest_velocity_data = velocity;
+                        latest_ang_velocity_data = velocity;
 
                         //ESP_LOGW(TAG, "Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s]", velocity.x, velocity.y, velocity.z);
                         break;
@@ -82,6 +85,13 @@ void imu_init()
                         //lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
                         //ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);
                         break;
+                    
+                    case SH2_MAGNETIC_FIELD_CALIBRATED:
+                        mag_cal_quality = imu.rpt.cal_magnetometer.get();
+                        latest_mag_cal_quality = mag_cal_quality;
+                        // mag_data.accuracy will show calibration quality (0-3)
+                        break;
+                    
 
                     default:
 
