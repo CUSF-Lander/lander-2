@@ -133,14 +133,14 @@ void testServo() {
 
 extern "C" void app_main(void)
 {
-    esp_err_t i2c_result = i2c_master_init();
+    /*esp_err_t i2c_result = i2c_master_init();
     if (i2c_result == ESP_OK) {
         ESP_LOGI(TAG, "I2C initialized successfully");
     } else {
         ESP_LOGE(TAG, "I2C initialization failed: %s", esp_err_to_name(i2c_result));
-    }
+    }*/
 
-    //i2c_master_init();
+    i2c_master_init();
     pca9685_init();
     bmp390_init(); 
     init_espnow_sender();
@@ -195,12 +195,12 @@ extern "C" void app_main(void)
     //init_2_motors();
 
     //move esp_now_task to CPU 0 to avoid watchdog issues on CPU 1
-    /*BaseType_t esp_now_task_handle = xTaskCreatePinnedToCore(esp_now_task, "esp_now_task", 4096, NULL, 5, NULL, PRO_CPU_NUM);
+    BaseType_t esp_now_task_handle = xTaskCreatePinnedToCore(esp_now_task, "esp_now_task", 4096, NULL, 5, NULL, PRO_CPU_NUM);
     if(esp_now_task_handle != pdPASS) {
         ESP_LOGE(TAG, "Failed to create esp_now task!");
     } else {
         ESP_LOGI(TAG, "esp_now task started on CPU 0.");
-    } */
+    } 
 
     //todo:code will never reach here as we are testing the motor in an infinite loop
 
