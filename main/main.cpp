@@ -7,6 +7,7 @@
 #include "i2c/i2c_setup.hpp"
 #include "motor_init.hpp"
 #include "i2c/bmp390.hpp"
+#include "espnow_init.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -105,6 +106,14 @@ void state_estimation(void *pvParameters)
     }
 }
 
+void esp_now_task(void *pvParameters)
+{
+    while(1) {
+        esp_now_send_data();
+        vTaskDelay(pdMS_TO_TICKS(10)); // Send every 10ms (100 Hz) - gives IDLE task time to run
+    }
+}
+
 void testServo() {
     while(1){
         
@@ -124,24 +133,31 @@ void testServo() {
 
 extern "C" void app_main(void)
 {
-    //TODO IMU: Tempoarily disabled to test the IMU Only
-    
-    i2c_master_init();
+    esp_err_t i2c_result = i2c_master_init();
+    if (i2c_result == ESP_OK) {
+        ESP_LOGI(TAG, "I2C initialized successfully");
+    } else {
+        ESP_LOGE(TAG, "I2C initialization failed: %s", esp_err_to_name(i2c_result));
+    }
+
+    //i2c_master_init();
     pca9685_init();
     bmp390_init(); 
+    init_espnow_sender();
 
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
     //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
     vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 2000ms so the IMU is fully powered on to reduce zero error
     imu_init(); //TODO IMU REV: commented for now only (IMU)
 
-    // Create the vector logging task
-    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    // Create the vector logging task with higher stack
+    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 8192, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create vector logging task!");
     } else {
         ESP_LOGI(TAG, "Vector logging task started.");
     }
+    vTaskDelay(pdMS_TO_TICKS(100)); // Give task time to start
     
     // TODO IMU Rev: Launch state estimation task
     BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
@@ -177,6 +193,14 @@ extern "C" void app_main(void)
 
     //reverting to function based code for testing 
     //init_2_motors();
+
+    //move esp_now_task to CPU 0 to avoid watchdog issues on CPU 1
+    /*BaseType_t esp_now_task_handle = xTaskCreatePinnedToCore(esp_now_task, "esp_now_task", 4096, NULL, 5, NULL, PRO_CPU_NUM);
+    if(esp_now_task_handle != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create esp_now task!");
+    } else {
+        ESP_LOGI(TAG, "esp_now task started on CPU 0.");
+    } */
 
     //todo:code will never reach here as we are testing the motor in an infinite loop
 
