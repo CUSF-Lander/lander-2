@@ -1,2 +1,10 @@
-idf_component_register(SRCS "motor_init.cpp" "imu_init.cpp" "main.cpp" "globalvars.cpp" "config.cpp" "i2c/i2c_setup.cpp" "i2c/servo.cpp" "i2c/bmp390"
-                    INCLUDE_DIRS "")
+idf_component_register(SRCS "main.cpp"
+                         "motor_init.cpp"
+                         "imu_init.cpp"
+                         "globalvars.cpp"
+                         "config.cpp"
+                         "espnow_init.cpp"
+                         "i2c/i2c_setup.cpp"
+                         "i2c/servo.cpp"
+                         "i2c/bmp390.cpp"
+                    INCLUDE_DIRS "i2c")

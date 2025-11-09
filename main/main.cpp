@@ -7,6 +7,7 @@
 #include "i2c/i2c_setup.hpp"
 #include "motor_init.hpp"
 #include "i2c/bmp390.hpp"
+#include "espnow_init.hpp"
 
 static const constexpr char* TAG = "Main";
 
@@ -40,14 +41,16 @@ void measure_datarate(void *pvParameters)
         //original logging message with vectors
         //ESP_LOGI(TAG, "Seconds since boot (s): %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
 
-        //logging message with latest data
-        ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", \
-            (latest_timestamp/1000000), euler_counter, latest_position.x, latest_position.y, latest_position.z, \
-            latest_euler_data.x, latest_euler_data.y, latest_euler_data.z, \
-            latest_velocity_data.x, latest_velocity_data.y, latest_velocity_data.z, \
-            latest_gravity_data.x, latest_gravity_data.y, latest_gravity_data.z, \
-            latest_ang_accel_data.x, latest_ang_accel_data.y, latest_ang_accel_data.z, \
-            latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z, free_heap_size);
+        //logging message with latest data - simplified for visibility
+        ESP_LOGI(TAG, "===== IMU DATA =====");
+        ESP_LOGI(TAG, "Euler (roll/pitch/yaw): %.2f / %.2f / %.2f deg", 
+            latest_euler_data.x, latest_euler_data.y, latest_euler_data.z);
+        ESP_LOGI(TAG, "Linear Accel (x/y/z): %.2f / %.2f / %.2f m/s²", 
+            latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z);
+        ESP_LOGI(TAG, "Position (x/y/z): %.2f / %.2f / %.2f", 
+            latest_position.x, latest_position.y, latest_position.z);
+        ESP_LOGI(TAG, "Euler count: %li | Free heap: %u bytes", euler_counter, free_heap_size);
+        ESP_LOGI(TAG, "===================");
 
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
@@ -104,6 +107,14 @@ void state_estimation(void *pvParameters)
     }
 }
 
+void esp_now_task(void *pvParameters)
+{
+    while(1) {
+        esp_now_send_data();
+        vTaskDelay(pdMS_TO_TICKS(10)); // Send every 10ms (100 Hz) - gives IDLE task time to run
+    }
+}
+
 void testServo() {
     while(1){
         
@@ -123,21 +134,31 @@ void testServo() {
 
 extern "C" void app_main(void)
 {
-    i2c_master_init();
+    esp_err_t i2c_result = i2c_master_init();
+    if (i2c_result == ESP_OK) {
+        ESP_LOGI(TAG, "I2C initialized successfully");
+    } else {
+        ESP_LOGE(TAG, "I2C initialization failed: %s", esp_err_to_name(i2c_result));
+    }
+    
     pca9685_init();
     bmp390_init();
+    
+    // Initialize ESP-NOW
+    init_espnow_sender();
 
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
-    //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
-    //imu_init(); //todo: commented for now only (IMU)
+    vTaskDelay(pdMS_TO_TICKS(2000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
+    imu_init(); //todo: commented for now only (IMU)
 
-    // Create the vector logging task
-    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    // Create the vector logging task with higher stack
+    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 8192, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create vector logging task!");
     } else {
         ESP_LOGI(TAG, "Vector logging task started.");
     }
+    vTaskDelay(pdMS_TO_TICKS(100)); // Give task time to start
     
     // // Launch state estimation task
     // BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
@@ -161,7 +182,7 @@ extern "C" void app_main(void)
     }*/
 
     //code for RTOS Task
-    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 5, NULL, APP_CPU_NUM);
+    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 4, NULL, APP_CPU_NUM);
     if(motor_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create motor task!");
     } else {
@@ -171,6 +192,14 @@ extern "C" void app_main(void)
 
     //reverting to function based code for testing 
     //init_2_motors();
+
+    //move esp_now_task to CPU 0 to avoid watchdog issues on CPU 1
+    /*BaseType_t esp_now_task_handle = xTaskCreatePinnedToCore(esp_now_task, "esp_now_task", 4096, NULL, 5, NULL, PRO_CPU_NUM);
+    if(esp_now_task_handle != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create esp_now task!");
+    } else {
+        ESP_LOGI(TAG, "esp_now task started on CPU 0.");
+    } */
 
     //todo:code will never reach here as we are testing the motor in an infinite loop
 
