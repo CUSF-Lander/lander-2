@@ -41,21 +41,20 @@ void measure_datarate(void *pvParameters)
         //original logging message with vectors
         //ESP_LOGI(TAG, "Seconds since boot (s): %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
 
-        //logging message with latest data - simplified for visibility
-        ESP_LOGI(TAG, "===== IMU DATA =====");
-        ESP_LOGI(TAG, "Euler (roll/pitch/yaw): %.2f / %.2f / %.2f deg", 
-            latest_euler_data.x, latest_euler_data.y, latest_euler_data.z);
-        ESP_LOGI(TAG, "Linear Accel (x/y/z): %.2f / %.2f / %.2f m/s²", 
-            latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z);
-        ESP_LOGI(TAG, "Position (x/y/z): %.2f / %.2f / %.2f", 
-            latest_position.x, latest_position.y, latest_position.z);
-        ESP_LOGI(TAG, "Euler count: %li | Free heap: %u bytes", euler_counter, free_heap_size);
-        ESP_LOGI(TAG, "===================");
+        //logging message with latest data
+        ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Angular Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Linear Velocity: (x: %.2f y: %2f z: %2f) [m/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", \
+            (latest_timestamp/1000000), euler_counter, latest_position.x, latest_position.y, latest_position.z, \
+            latest_euler_data.x, latest_euler_data.y, latest_euler_data.z, \
+            latest_ang_velocity_data.x, latest_ang_velocity_data.y, latest_ang_velocity_data.z, \
+            latest_velocity.x, latest_velocity.y, latest_velocity.z, \
+            latest_gravity_data.x, latest_gravity_data.y, latest_gravity_data.z, \
+            latest_ang_accel_data.x, latest_ang_accel_data.y, latest_ang_accel_data.z, \
+            latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z, free_heap_size);
 
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
         //ESP_LOGI(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel_data.back().x, lin_accel_data.back().y, lin_accel_data.back().z);
-        vTaskDelay(pdMS_TO_TICKS(500)); // Delay for 500ms
+        vTaskDelay(pdMS_TO_TICKS(50)); // Delay for 500ms
     }
 }
 
@@ -64,7 +63,7 @@ void state_estimation(void *pvParameters)
 {
     const double dt = 0.01; // seconds 0.005s = (200Hz)
     const double dt_ms = dt*1000; // ms
-    static double vx = 0, vy = 0, vz = 0; // local velocity integration
+    //static double vx = 0, vy = 0, vz = 0; // local velocity integration
     const double deg2rad = 3.14159265358979323846 / 180.0;
     while (1)
     {
@@ -93,14 +92,14 @@ void state_estimation(void *pvParameters)
         double a_ez = -sp * ax + cp * sr * ay + cp * cr * az;
 
         // Integrate acceleration to update velocity
-        vx += a_ex * dt;
-        vy += a_ey * dt;
-        vz += a_ez * dt;
+        latest_velocity.x += a_ex * dt;
+        latest_velocity.y += a_ey * dt;
+        latest_velocity.z += a_ez * dt;
 
         // Integrate velocity to update position (global variable)
-        latest_position.x += vx * dt;
-        latest_position.y += vy * dt;
-        latest_position.z += vz * dt;
+        latest_position.x += latest_velocity.x * dt;
+        latest_position.y += latest_velocity.y * dt;
+        latest_position.z += latest_velocity.z * dt;
 
         // wait for next cycle
         vTaskDelay(pdMS_TO_TICKS(dt_ms));
@@ -140,16 +139,16 @@ extern "C" void app_main(void)
     } else {
         ESP_LOGE(TAG, "I2C initialization failed: %s", esp_err_to_name(i2c_result));
     }
-    
+
+    //i2c_master_init();
     pca9685_init();
-    bmp390_init();
-    
-    // Initialize ESP-NOW
+    bmp390_init(); 
     init_espnow_sender();
 
     // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
-    vTaskDelay(pdMS_TO_TICKS(2000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
-    imu_init(); //todo: commented for now only (IMU)
+    //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 2000ms so the IMU is fully powered on to reduce zero error
+    imu_init(); //TODO IMU REV: commented for now only (IMU)
 
     // Create the vector logging task with higher stack
     BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 8192, NULL, 1, NULL, APP_CPU_NUM);
@@ -160,13 +159,13 @@ extern "C" void app_main(void)
     }
     vTaskDelay(pdMS_TO_TICKS(100)); // Give task time to start
     
-    // // Launch state estimation task
-    // BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
-    // if(state_estimation_task != pdPASS) {
-    //     ESP_LOGE(TAG, "Failed to create state estimation task!");
-    // } else {
-    //     ESP_LOGI(TAG, "State estimation task started.");
-    // }
+    // TODO IMU Rev: Launch state estimation task
+    BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    if(state_estimation_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create state estimation task!");
+    } else {
+        ESP_LOGI(TAG, "State estimation task started.");
+    }
 
     // while (1)
     // {
@@ -182,7 +181,9 @@ extern "C" void app_main(void)
     }*/
 
     //code for RTOS Task
-    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 4, NULL, APP_CPU_NUM);
+    //TODO IMU: Tempoarily disabled to test the IMU Only
+    
+    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 5, NULL, APP_CPU_NUM);
     if(motor_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create motor task!");
     } else {
@@ -210,13 +211,17 @@ extern "C" void app_main(void)
         //TODO: Reposition the BMP390 code to be in a suitable RTOS task - currently runs every second in the main loop
         // Get Temperature and Pressure data
         // Pass the addresses of the variables to bmp390_get_data
+        
+        //TODO IMU: Tempoarily disabled to test the IMU Only
         esp_err_t result = bmp390_get_data(&temperature, &pressure, &altitude);
 
         if (result == ESP_OK) {
             printf("Temperature: %.2f °C, Pressure: %.2f Pa\n, Altitude: %.2f m", temperature, pressure, altitude);
         } else {
             printf("Failed to read data from BMP390 sensor\n");
-        }
+        } 
         vTaskDelay(1000UL / portTICK_PERIOD_MS); //originally 10000UL
+
+    
     }
 }
