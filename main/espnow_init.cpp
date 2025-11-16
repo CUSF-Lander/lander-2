@@ -17,8 +17,8 @@ static volatile bool send_pending = false;
 static uint32_t send_success_count = 0;
 static uint32_t send_fail_count = 0;
 
-//Callback function for send status (ESP-IDF v5.4 signature)
-void on_data_sent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+//Callback function for send status (ESP-IDF v5.5.1 signature)
+void on_data_sent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
     send_pending = false;
     if (status == ESP_NOW_SEND_SUCCESS) {
         send_success_count++;
