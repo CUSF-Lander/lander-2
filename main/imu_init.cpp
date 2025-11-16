@@ -12,10 +12,29 @@ void imu_init()
 {   
     static BNO08x imu;
 
-    // initialize imu
-    if (!imu.initialize())
-    {
-        ESP_LOGE(TAG, "Init failure, returning from main.");
+    ESP_LOGI(TAG, "Starting IMU initialisation...");
+    
+    //try initialisation with retries for ESP-IDF 5.5.1 compatibility
+    const int max_attempts = 3;
+    bool init_success = false;
+    
+    for (int attempt = 1; attempt <= max_attempts; attempt++) {
+        ESP_LOGI(TAG, "IMU initialisation attempt %d/%d", attempt, max_attempts);
+        
+        if (imu.initialize()) {
+            init_success = true;
+            ESP_LOGI(TAG, "IMU initialised successfully!");
+            break;
+        }
+        
+        ESP_LOGW(TAG, "Attempt %d failed", attempt);
+        if (attempt < max_attempts) {
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+    }
+    
+    if (!init_success) {
+        ESP_LOGE(TAG, "IMU initialisation failed after %d attempts!", max_attempts);
         return;
     }
 
@@ -80,7 +99,7 @@ void imu_init()
                         break;
 
                     case SH2_LINEAR_ACCELERATION:
-                        lin_accel = imu.rpt.accelerometer.get();
+                        lin_accel = imu.rpt.linear_accelerometer.get();
                         latest_lin_accel_data = lin_accel;
                         //lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
                         //ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);

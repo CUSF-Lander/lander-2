@@ -1,8 +1,9 @@
-//// filepath: /Users/clementtong/Desktop/Programming2/Lander-FlightComputer-1/lander-2/main/imu_init.hpp
-#ifndef I2C_SETUP
-#define I2C_SETUP
+#ifndef I2C_SETUP_HPP
+#define I2C_SETUP_HPP
 
-// Initializes the IMU, registers callbacks, and creates the data rate task.
-void i2c_master_init();
+#include "esp_err.h"
 
-#endif // IMU_INIT_HPP
+// Initialize the I2C master peripheral
+esp_err_t i2c_master_init();
+
+#endif // I2C_SETUP_HPP

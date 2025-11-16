@@ -133,22 +133,24 @@ void testServo() {
 
 extern "C" void app_main(void)
 {
-    /*esp_err_t i2c_result = i2c_master_init();
+    //Initialise I2C with error checking
+    esp_err_t i2c_result = i2c_master_init();
     if (i2c_result == ESP_OK) {
         ESP_LOGI(TAG, "I2C initialized successfully");
     } else {
         ESP_LOGE(TAG, "I2C initialization failed: %s", esp_err_to_name(i2c_result));
-    }*/
-
-    i2c_master_init();
+        return;
+    }
+    
+    vTaskDelay(pdMS_TO_TICKS(100)); //Let I2C stabilise
+    
     pca9685_init();
     bmp390_init(); 
     init_espnow_sender();
 
-    // Initialize the IMU with the function imu_init() in imu_init.hpp / .cpp 
-    //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 500ms - see if this solves the strange issue of needing to tempoarily unplug the IMU and then quickly plug it back in before the output reaches row 321 - no it does not
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for 2000ms so the IMU is fully powered on to reduce zero error
-    imu_init(); //TODO IMU REV: commented for now only (IMU)
+    ESP_LOGI(TAG, "Waiting for IMU power-up...");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    imu_init();
 
     // Create the vector logging task with higher stack
     BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 8192, NULL, 1, NULL, APP_CPU_NUM);
