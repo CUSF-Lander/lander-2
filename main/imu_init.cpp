@@ -68,9 +68,13 @@ void imu_init()
                 {
                     case SH2_ROTATION_VECTOR:
                         euler = imu.rpt.rv.get_euler();
+                        
+                        portENTER_CRITICAL(&global_spinlock);
                         latest_euler_data = euler;
                         latest_timestamp = current_timestamp;
                         euler_counter +=1;
+                        portEXIT_CRITICAL(&global_spinlock);
+
                         //euler_data.push_back(euler);
                         //timestamps.push_back(current_timestamp); // Store timestamp
                         //ESP_LOGI(TAG, "Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler.x, euler.y, euler.z);
@@ -79,7 +83,9 @@ void imu_init()
                     case SH2_CAL_GYRO:
                         velocity = imu.rpt.cal_gyro.get();
                         // velocity_data.push_back(velocity);
+                        portENTER_CRITICAL(&global_spinlock);
                         latest_ang_velocity_data = velocity;
+                        portEXIT_CRITICAL(&global_spinlock);
 
                         //ESP_LOGW(TAG, "Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s]", velocity.x, velocity.y, velocity.z);
                         break;
@@ -87,27 +93,35 @@ void imu_init()
                     case SH2_GRAVITY:
                         grav = imu.rpt.gravity.get();
                         //gravity_data.push_back(grav);
+                        portENTER_CRITICAL(&global_spinlock);
                         latest_gravity_data = grav;
+                        portEXIT_CRITICAL(&global_spinlock);
                         //ESP_LOGW(TAG, "Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2]", grav.x, grav.y, grav.z);
                         break;
 
                     case SH2_ACCELEROMETER:
                         ang_accel = imu.rpt.accelerometer.get();
+                        portENTER_CRITICAL(&global_spinlock);
                         latest_ang_accel_data = ang_accel;
+                        portEXIT_CRITICAL(&global_spinlock);
                         //ang_accel_data.push_back(ang_accel);
                         //ESP_LOGW(TAG, "Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", ang_accel.x, ang_accel.y, ang_accel.z);
                         break;
 
                     case SH2_LINEAR_ACCELERATION:
                         lin_accel = imu.rpt.linear_accelerometer.get();
+                        portENTER_CRITICAL(&global_spinlock);
                         latest_lin_accel_data = lin_accel;
+                        portEXIT_CRITICAL(&global_spinlock);
                         //lin_accel_data.push_back(imu.rpt.linear_accelerometer.get());
                         //ESP_LOGW(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel.x, lin_accel.y, lin_accel.z);
                         break;
                     
                     case SH2_MAGNETIC_FIELD_CALIBRATED:
                         mag_cal_quality = imu.rpt.cal_magnetometer.get();
+                        portENTER_CRITICAL(&global_spinlock);
                         latest_mag_cal_quality = mag_cal_quality;
+                        portEXIT_CRITICAL(&global_spinlock);
                         // mag_data.accuracy will show calibration quality (0-3)
                         break;
                     
