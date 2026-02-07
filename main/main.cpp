@@ -68,10 +68,12 @@ void state_estimation(void *pvParameters)
     while (1)
     {
         // read measured linear acceleration and Euler angles (in degrees) from globals
-        // Subtract the gravity vector from the linear acceleration
-        double ax = latest_lin_accel_data.x - latest_gravity_data.x;
-        double ay = latest_lin_accel_data.y - latest_gravity_data.y;
-        double az = latest_lin_accel_data.z - latest_gravity_data.z;
+
+        // Acceleration corrected since original calculation accounted for gravity, even though sensor did that already
+        double ax = latest_lin_accel_data.x;
+        double ay = latest_lin_accel_data.y;
+        double az = latest_lin_accel_data.z;
+
         double roll_deg = latest_euler_data.x;
         double pitch_deg = latest_euler_data.y;
         double yaw_deg = latest_euler_data.z;
