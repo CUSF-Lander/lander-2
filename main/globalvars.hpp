@@ -4,8 +4,10 @@
 #include "esp_log.h"
 #include <vector>
 #include <BNO08xGlobalTypes.hpp>
+#include <freertos/FreeRTOS.h>
 
 // Global variables
+extern portMUX_TYPE global_spinlock;
 extern bno08x_euler_angle_t latest_euler_data;
 extern bno08x_gyro_t latest_ang_velocity_data;
 extern bno08x_accel_t latest_gravity_data;
