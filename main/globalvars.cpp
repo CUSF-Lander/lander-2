@@ -2,6 +2,7 @@
 #include "globalvars.hpp"
 
 // Initialize global variables
+portMUX_TYPE global_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 double target_velocity_multiplier = 1.0; // Default value, can be adjusted as needed
 

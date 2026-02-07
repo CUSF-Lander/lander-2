@@ -2,10 +2,13 @@
 #include "esp_now.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
-#include "espnow_data.hpp"
 #include "globalvars.hpp"
 #include <cstring>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <atomic>
 
 static const char *TAG = "ESP_NOW_SENDER";
 
@@ -13,12 +16,12 @@ static const char *TAG = "ESP_NOW_SENDER";
 static uint8_t receiver_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; //Broadcast address
 
 //Flow control variables
-static volatile bool send_pending = false;
-static uint32_t send_success_count = 0;
-static uint32_t send_fail_count = 0;
+static std::atomic<bool> send_pending(false);
+static std::atomic<uint32_t> send_success_count(0);
+static std::atomic<uint32_t> send_fail_count(0);
 
-//Callback function for send status (ESP-IDF v5.5.1 signature)
-void on_data_sent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+//Callback function for send status
+void on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
     send_pending = false;
     if (status == ESP_NOW_SEND_SUCCESS) {
         send_success_count++;
@@ -44,27 +47,46 @@ void init_espnow_sender() {
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    
+    //set Long Range Mode (LR) and Max TX Power (improves range but decreases throughput, need to find balance)
+    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR));
+    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(82)); 
+    
+    //explicitly set channel 1 to ensure sender/receiver match
+    ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
+
     ESP_ERROR_CHECK(esp_wifi_start());
 
     //Initialize ESP-NOW
     ESP_ERROR_CHECK(esp_now_init());
     ESP_ERROR_CHECK(esp_now_register_send_cb(on_data_sent));
 
-    //Add peer
-    esp_now_peer_info_t peer_info = {};
-    memcpy(peer_info.peer_addr, receiver_mac, 6);
-    peer_info.channel = 0;
-    peer_info.ifidx = WIFI_IF_STA;
-    peer_info.encrypt = false;
-    ESP_ERROR_CHECK(esp_now_add_peer(&peer_info));
+    //Add peer (if one doesn't already exist)
+    if (!esp_now_is_peer_exist(receiver_mac)) {
+        esp_now_peer_info_t peer_info = {};
+        memcpy(peer_info.peer_addr, receiver_mac, 6);
+        peer_info.channel = 1; //match the wifi channel set above
+        peer_info.ifidx = WIFI_IF_STA;
+        peer_info.encrypt = false;
+        ESP_ERROR_CHECK(esp_now_add_peer(&peer_info));
+    }
 
     ESP_LOGI(TAG, "ESP-NOW sender initialized successfully.");
 }
 
 void esp_now_send_data() {
-    //Skip if previous send is still pending
+    static int64_t last_send_time = 0;
+    const int64_t SEND_TIMEOUT_US = 50000; //50ms watchdog
+
+    //Skip if previous send is still pending, unless timeout
     if (send_pending) {
-        return;
+        if ((esp_timer_get_time() - last_send_time) > SEND_TIMEOUT_US) {
+            send_pending = false;
+            send_fail_count++;
+        } else {
+            return;
+        }
     }
     
     static uint32_t sequence = 0;
@@ -74,21 +96,29 @@ void esp_now_send_data() {
     memset(&data, 0, sizeof(data));
     
     data.sequence = ++sequence;
+    data.timestamp = (uint32_t)(esp_timer_get_time() / 1000); // ms
+
+    //protect global variable access with a spinlock/critical section- 64 bit double reads are not guaranteed atomic on 32-bit ESP32
+    portENTER_CRITICAL(&global_spinlock);
     
-    data.sensor_data[0] = latest_euler_data.x;     // Roll
-    data.sensor_data[1] = latest_euler_data.y;     // Pitch
-    data.sensor_data[2] = latest_euler_data.z;     // Yaw
-    data.sensor_data[3] = latest_lin_accel_data.x;
-    data.sensor_data[4] = latest_lin_accel_data.y;
-    data.sensor_data[5] = latest_lin_accel_data.z;
-    data.sensor_data[6] = (float)latest_position.x;
-    data.sensor_data[7] = (float)latest_position.y;
-    data.sensor_data[8] = (float)latest_position.z;
-    data.sensor_data[9] = (float)pressure;
+    data.roll      = latest_euler_data.x;
+    data.pitch     = latest_euler_data.y;
+    data.yaw       = latest_euler_data.z;
     
-    data.timestamp = (uint32_t)(esp_timer_get_time() / 1000);
+    data.lin_acc_x = latest_lin_accel_data.x;
+    data.lin_acc_y = latest_lin_accel_data.y;
+    data.lin_acc_z = latest_lin_accel_data.z;
+    
+    data.pos_x     = (float)latest_position.x;
+    data.pos_y     = (float)latest_position.y;
+    data.pos_z     = (float)latest_position.z;
+    
+    data.pressure  = (float)pressure;
+    
+    portEXIT_CRITICAL(&global_spinlock);
 
     send_pending = true;
+    last_send_time = esp_timer_get_time();
     esp_err_t result = esp_now_send(receiver_mac, (uint8_t *)&data, sizeof(data));
     
     if (result != ESP_OK) {
@@ -102,11 +132,14 @@ void esp_now_send_data() {
     
     // Log statistics every 100 packets
     if (sequence % 100 == 0) {
-        uint32_t total = send_success_count + send_fail_count;
+        uint32_t success = send_success_count.load();
+        uint32_t fail = send_fail_count.load();
+        uint32_t total = success + fail;
+
         if (total > 0) {
-            ESP_LOGI(TAG, "TX #%lu | Success: %lu/%lu (%.1f%%)", 
-                     sequence, send_success_count, total,
-                     (send_success_count * 100.0f) / total);
+            ESP_LOGI(TAG, "TX #%lu | Success: %lu/%lu (%.1f%%)",
+                     sequence, success, total,
+                     (success * 100.0f) / total);
         }
     }
 }
