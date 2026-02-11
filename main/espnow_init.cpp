@@ -2,7 +2,6 @@
 #include "esp_now.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "globalvars.hpp"
 #include <cstring>
@@ -21,7 +20,7 @@ static std::atomic<uint32_t> send_success_count(0);
 static std::atomic<uint32_t> send_fail_count(0);
 
 //Callback function for send status
-void on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
+void on_data_sent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
     send_pending = false;
     if (status == ESP_NOW_SEND_SUCCESS) {
         send_success_count++;
@@ -51,12 +50,14 @@ void init_espnow_sender() {
     
     //set Long Range Mode (LR) and Max TX Power (improves range but decreases throughput, need to find balance)
     ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR));
-    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(82)); 
-    
-    //explicitly set channel 1 to ensure sender/receiver match
-    ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
 
     ESP_ERROR_CHECK(esp_wifi_start());
+    
+    //explicitly set channel 1 to ensure sender/receiver match (must be called after esp_wifi_start)
+    ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
+    
+    //set max tx power (must be called after esp_wifi_start)
+    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(82)); 
 
     //Initialize ESP-NOW
     ESP_ERROR_CHECK(esp_now_init());
@@ -135,9 +136,8 @@ void esp_now_send_data() {
         uint32_t success = send_success_count.load();
         uint32_t fail = send_fail_count.load();
         uint32_t total = success + fail;
-
         if (total > 0) {
-            ESP_LOGI(TAG, "TX #%lu | Success: %lu/%lu (%.1f%%)",
+            ESP_LOGI(TAG, "TX #%lu | Success: %lu/%lu (%.1f%%)", 
                      sequence, success, total,
                      (success * 100.0f) / total);
         }

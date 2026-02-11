@@ -18,7 +18,6 @@ char pmem[512] = {0}; // Buffer to store the CPU usage data
 // RTOS Task to log the current stats of the data from the IMU every 500ms
 void measure_datarate(void *pvParameters)
 {   
-    
     while (1) {
         size_t free_heap_size = esp_get_free_heap_size(); // check the amount of ram left
 
@@ -41,15 +40,28 @@ void measure_datarate(void *pvParameters)
         //original logging message with vectors
         //ESP_LOGI(TAG, "Seconds since boot (s): %lld, Vector Sizes: Euler: %d, AngVel: %d, Grav: %d, AngAccel: %d, LinAcc: %d, Free Heap Size %u", (latest_timestamp/1000000), euler_data.size(), velocity_data.size(), gravity_data.size(), ang_accel_data.size(),lin_accel_data.size(), free_heap_size);
 
+        // snapshot globals
+        portENTER_CRITICAL(&global_spinlock);
+        uint64_t t_now = latest_timestamp;
+        int32_t ec = euler_counter;
+        auto pos = latest_position;
+        auto euler = latest_euler_data;
+        auto ang_vel = latest_ang_velocity_data;
+        auto vel = latest_velocity;
+        auto grav = latest_gravity_data;
+        auto ang_accel = latest_ang_accel_data;
+        auto lin_accel = latest_lin_accel_data;
+        portEXIT_CRITICAL(&global_spinlock);
+
         //logging message with latest data
-        ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Angular Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Linear Velocity: (x: %.2f y: %2f z: %2f) [m/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", \
-            (latest_timestamp/1000000), euler_counter, latest_position.x, latest_position.y, latest_position.z, \
-            latest_euler_data.x, latest_euler_data.y, latest_euler_data.z, \
-            latest_ang_velocity_data.x, latest_ang_velocity_data.y, latest_ang_velocity_data.z, \
-            latest_velocity.x, latest_velocity.y, latest_velocity.z, \
-            latest_gravity_data.x, latest_gravity_data.y, latest_gravity_data.z, \
-            latest_ang_accel_data.x, latest_ang_accel_data.y, latest_ang_accel_data.z, \
-            latest_lin_accel_data.x, latest_lin_accel_data.y, latest_lin_accel_data.z, free_heap_size);
+        ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Angular Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Linear Velocity: (x: %.2f y: %.2f z: %.2f) [m/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", \
+            (t_now/1000000), ec, pos.x, pos.y, pos.z, \
+            euler.x, euler.y, euler.z, \
+            ang_vel.x, ang_vel.y, ang_vel.z, \
+            vel.x, vel.y, vel.z, \
+            grav.x, grav.y, grav.z, \
+            ang_accel.x, ang_accel.y, ang_accel.z, \
+            lin_accel.x, lin_accel.y, lin_accel.z, free_heap_size);
 
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
@@ -58,25 +70,31 @@ void measure_datarate(void *pvParameters)
     }
 }
 
-// New state estimation task: 200Hz (5ms period)
+// New state estimation task: 100Hz (10ms period)
 void state_estimation(void *pvParameters)
 {
-    const double dt = 0.01; // seconds 0.005s = (200Hz)
+    const double dt = 0.01; // seconds 0.01s = (100Hz)
     const double dt_ms = dt*1000; // ms
     //static double vx = 0, vy = 0, vz = 0; // local velocity integration
     const double deg2rad = 3.14159265358979323846 / 180.0;
     while (1)
     {
         // read measured linear acceleration and Euler angles (in degrees) from globals
+        portENTER_CRITICAL(&global_spinlock);
+        auto current_lin_accel = latest_lin_accel_data;
+        auto current_euler = latest_euler_data;
+        auto current_vel = latest_velocity;
+        auto current_pos = latest_position;
+        portEXIT_CRITICAL(&global_spinlock);
 
         // Acceleration corrected since original calculation accounted for gravity, even though sensor did that already
-        double ax = latest_lin_accel_data.x;
-        double ay = latest_lin_accel_data.y;
-        double az = latest_lin_accel_data.z;
+        double ax = current_lin_accel.x;
+        double ay = current_lin_accel.y;
+        double az = current_lin_accel.z;
 
-        double roll_deg = latest_euler_data.x;
-        double pitch_deg = latest_euler_data.y;
-        double yaw_deg = latest_euler_data.z;
+        double roll_deg = current_euler.x;
+        double pitch_deg = current_euler.y;
+        double yaw_deg = current_euler.z;
 
         // convert Euler angles from degrees to radians
         double roll_rad = roll_deg * deg2rad;
@@ -94,14 +112,20 @@ void state_estimation(void *pvParameters)
         double a_ez = -sp * ax + cp * sr * ay + cp * cr * az;
 
         // Integrate acceleration to update velocity
-        latest_velocity.x += a_ex * dt;
-        latest_velocity.y += a_ey * dt;
-        latest_velocity.z += a_ez * dt;
+        current_vel.x += a_ex * dt;
+        current_vel.y += a_ey * dt;
+        current_vel.z += a_ez * dt;
 
         // Integrate velocity to update position (global variable)
-        latest_position.x += latest_velocity.x * dt;
-        latest_position.y += latest_velocity.y * dt;
-        latest_position.z += latest_velocity.z * dt;
+        current_pos.x += current_vel.x * dt;
+        current_pos.y += current_vel.y * dt;
+        current_pos.z += current_vel.z * dt;
+
+        // Update globals
+        portENTER_CRITICAL(&global_spinlock);
+        latest_velocity = current_vel;
+        latest_position = current_pos;
+        portEXIT_CRITICAL(&global_spinlock);
 
         // wait for next cycle
         vTaskDelay(pdMS_TO_TICKS(dt_ms));
@@ -113,6 +137,28 @@ void esp_now_task(void *pvParameters)
     while(1) {
         esp_now_send_data();
         vTaskDelay(pdMS_TO_TICKS(1)); // Send every 1ms (1000 Hz) - gives IDLE task time to run
+    }
+}
+
+void bmp390_task(void *pvParameters)
+{
+    while (1)
+    {
+        double t, p, a;
+        esp_err_t result = bmp390_get_data(&t, &p, &a);
+
+        if (result == ESP_OK) {
+            portENTER_CRITICAL(&global_spinlock);
+            temperature = t;
+            pressure = p;
+            altitude = a;
+            portEXIT_CRITICAL(&global_spinlock);
+
+            ESP_LOGI(TAG, "Temperature: %.2f °C, Pressure: %.2f Pa, Altitude: %.2f m", t, p, a);
+        } else {
+            ESP_LOGE(TAG, "Failed to read data from BMP390 sensor");
+        } 
+        vTaskDelay(pdMS_TO_TICKS(500)); //Run every 0.5 seconds?
     }
 }
 
@@ -163,8 +209,8 @@ extern "C" void app_main(void)
     }
     vTaskDelay(pdMS_TO_TICKS(100)); // Give task time to start
     
-    // TODO IMU Rev: Launch state estimation task
-    BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    // Launch state estimation task
+    BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 4096, NULL, 2, NULL, APP_CPU_NUM);
     if(state_estimation_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create state estimation task!");
     } else {
@@ -187,7 +233,7 @@ extern "C" void app_main(void)
     //code for RTOS Task
     //TODO IMU: Tempoarily disabled to test the IMU Only
     
-    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 5, NULL, APP_CPU_NUM);
+    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 3, NULL, APP_CPU_NUM);
     if(motor_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create motor task!");
     } else {
@@ -199,33 +245,26 @@ extern "C" void app_main(void)
     //init_2_motors();
 
     //move esp_now_task to CPU 0 to avoid watchdog issues on CPU 1
-    BaseType_t esp_now_task_handle = xTaskCreatePinnedToCore(esp_now_task, "esp_now_task", 4096, NULL, 5, NULL, PRO_CPU_NUM);
+    BaseType_t esp_now_task_handle = xTaskCreatePinnedToCore(esp_now_task, "esp_now_task", 4096, NULL, 4, NULL, PRO_CPU_NUM);
     if(esp_now_task_handle != pdPASS) {
         ESP_LOGE(TAG, "Failed to create esp_now task!");
     } else {
         ESP_LOGI(TAG, "esp_now task started on CPU 0.");
     } 
 
+    //launch BMP390 sensor task
+    BaseType_t bmp390_task_handle = xTaskCreatePinnedToCore(bmp390_task, "bmp390_task", 4096, NULL, 1, NULL, APP_CPU_NUM);
+    if(bmp390_task_handle != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create BMP390 task!");
+    } else {
+        ESP_LOGI(TAG, "BMP390 task started.");
+    }
+
     //todo:code will never reach here as we are testing the motor in an infinite loop
 
     while (1)
     {
         // delay time is irrelevant, we just don't want to trip WDT
-
-        //TODO: Reposition the BMP390 code to be in a suitable RTOS task - currently runs every second in the main loop
-        // Get Temperature and Pressure data
-        // Pass the addresses of the variables to bmp390_get_data
-        
-        //TODO IMU: Tempoarily disabled to test the IMU Only
-        esp_err_t result = bmp390_get_data(&temperature, &pressure, &altitude);
-
-        if (result == ESP_OK) {
-            printf("Temperature: %.2f °C, Pressure: %.2f Pa\n, Altitude: %.2f m", temperature, pressure, altitude);
-        } else {
-            printf("Failed to read data from BMP390 sensor\n");
-        } 
-        vTaskDelay(1000UL / portTICK_PERIOD_MS); //originally 10000UL
-
-    
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
