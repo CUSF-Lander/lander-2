@@ -7,4 +7,5 @@ idf_component_register(SRCS "main.cpp"
                          "i2c/i2c_setup.cpp"
                          "i2c/servo.cpp"
                          "i2c/bmp390.cpp"
-                    INCLUDE_DIRS "i2c")
+                    INCLUDE_DIRS "i2c"
+                    REQUIRES esp32_BNO08x esp_wifi esp32-dshot-master nvs_flash)

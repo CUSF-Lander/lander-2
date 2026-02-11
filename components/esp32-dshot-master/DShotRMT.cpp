@@ -186,7 +186,7 @@ uint8_t DShotRMT::checksum(uint16_t data)
 
 esp_err_t DShotRMT::writeData(uint16_t data, bool wait)
 {
-	DSHOT_ERROR_CHECK(rmt_wait_tx_done(_rmtChannel, 0));
+	DSHOT_ERROR_CHECK(rmt_wait_tx_done(_rmtChannel, portMAX_DELAY));
 
 	setData(data);
 
