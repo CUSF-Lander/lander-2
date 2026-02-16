@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "globalvars.hpp"
 
 // Include the DShot library
 #include "DShotRMT.h"
@@ -74,6 +75,14 @@ void init_2_motors(void* pvParameters)
     // Main control loop - send the 5% throttle command continuously
     ESP_LOGI(TAG, "Entering control loop with 5%% throttle");
     while (true) {
+        if (estop_triggered) {
+            //send 0 throttle to stop motors
+            esc.sendThrottle(0);
+            esc2.sendThrottle(0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
         // Send the throttle % command
         esp_err_t throttle_result = esc.sendThrottle(throttle_percent);
         /*if (throttle_result != ESP_OK) {
