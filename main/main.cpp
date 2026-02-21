@@ -136,7 +136,7 @@ void esp_now_task(void *pvParameters)
 {
     while(1) {
         esp_now_send_data();
-        vTaskDelay(pdMS_TO_TICKS(1)); // Send every 1ms (1000 Hz) - gives IDLE task time to run
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 

@@ -21,9 +21,9 @@ void init_2_motors(void* pvParameters)
         initializeMotor(GPIO_NUM_5, RMT_CHANNEL_1);
         */
 
-    //pin configurations: (change these to the correct GPIO pins)
+    //pin configurations: (changed motor2 to 18 as IMU was also initialised there)
     gpio_num_t dshot_gpio = GPIO_NUM_4;
-    gpio_num_t dshot_gpio2 = GPIO_NUM_5;
+    gpio_num_t dshot_gpio2 = GPIO_NUM_18;
     rmt_channel_t rmt_channel = RMT_CHANNEL_0;
     rmt_channel_t rmt_channel2 = RMT_CHANNEL_1;
 
