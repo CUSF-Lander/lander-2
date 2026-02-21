@@ -29,6 +29,17 @@ void on_data_sent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
     }
 }
 
+//Callback function for receiving data
+void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
+    if (len == sizeof(esp_now_cmd_t)) {
+        esp_now_cmd_t *cmd = (esp_now_cmd_t *)data;
+        if (cmd->command == 1) { // ESTOP
+            ESP_LOGW(TAG, "ESTOP COMMAND RECEIVED!");
+            estop_triggered = true;
+        }
+    }
+}
+
 //Initialise Wi-Fi and ESP-NOW for sending
 void init_espnow_sender() {
     //Initialise NVS
@@ -62,6 +73,7 @@ void init_espnow_sender() {
     //Initialize ESP-NOW
     ESP_ERROR_CHECK(esp_now_init());
     ESP_ERROR_CHECK(esp_now_register_send_cb(on_data_sent));
+    ESP_ERROR_CHECK(esp_now_register_recv_cb(on_data_recv));
 
     //Add peer (if one doesn't already exist)
     if (!esp_now_is_peer_exist(receiver_mac)) {
