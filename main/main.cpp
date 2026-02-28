@@ -27,7 +27,7 @@ void measure_datarate(void *pvParameters)
         esp_cpu_get_load(ESP_CPU_MAIN, &cpu_usage_core_0); // ESP_CPU_MAIN is Core 0
         esp_cpu_get_load(ESP_CPU_APP, &cpu_usage_core_1);  // ESP_CPU_APP is Core 1*/
 
-        /*if (timestamps.size() != 0) {
+       /*if (timestamps.size() != 0) {
             latest_timestamp = timestamps.back();
         } else {
             latest_timestamp = 0;
@@ -53,6 +53,13 @@ void measure_datarate(void *pvParameters)
         auto lin_accel = latest_lin_accel_data;
         portEXIT_CRITICAL(&global_spinlock);
 
+       if (ec<= 0){
+            ESP_LOGI(TAG, "Seconds since boot (s): %lld, No Euler data received yet, Latest Pos: (x: %.2f y: %.2f z: %.2f), Free Heap Size %u", \
+            (t_now/1000000), pos.x, pos.y, pos.z, free_heap_size);
+            vTaskDelay(pdMS_TO_TICKS(500)); // Delay for 500ms
+       }
+
+        else{
         //logging message with latest data
         ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Angular Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Linear Velocity: (x: %.2f y: %.2f z: %.2f) [m/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", \
             (t_now/1000000), ec, pos.x, pos.y, pos.z, \
@@ -63,11 +70,9 @@ void measure_datarate(void *pvParameters)
             ang_accel.x, ang_accel.y, ang_accel.z, \
             lin_accel.x, lin_accel.y, lin_accel.z, free_heap_size);
 
-        //todo: error not handled when vector size is 0
-        //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
-        //ESP_LOGI(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel_data.back().x, lin_accel_data.back().y, lin_accel_data.back().z);
-        vTaskDelay(pdMS_TO_TICKS(50)); // Delay for 500ms
+        vTaskDelay(pdMS_TO_TICKS(500)); // Delay for 500ms
     }
+}
 }
 
 // New state estimation task: 100Hz (10ms period)
@@ -75,22 +80,76 @@ void state_estimation(void *pvParameters)
 {
     const double dt = 0.01; // seconds 0.01s = (100Hz)
     const double dt_ms = dt*1000; // ms
-    //static double vx = 0, vy = 0, vz = 0; // local velocity integration
     const double deg2rad = 3.14159265358979323846 / 180.0;
+
     while (1)
     {
-        // read measured linear acceleration and Euler angles (in degrees) from globals
-        portENTER_CRITICAL(&global_spinlock);
-        auto current_lin_accel = latest_lin_accel_data;
-        auto current_euler = latest_euler_data;
-        auto current_vel = latest_velocity;
-        auto current_pos = latest_position;
-        portEXIT_CRITICAL(&global_spinlock);
+        // block until new IMU sample arrives; rely on the queue populated by the
+        // IMU callback so that reading and processing happen in this task.
+        imu_sample_t sample;
+        if (xQueueReceive(imu_queue, &sample, pdMS_TO_TICKS(200)) == pdPASS) {
+            // update globals for any other readers
+            portENTER_CRITICAL(&global_spinlock);
+            latest_euler_data = sample.euler;
+            latest_ang_velocity_data = sample.gyro;
+            latest_gravity_data = sample.gravity;
+            latest_ang_accel_data = sample.ang_accel;
+            latest_lin_accel_data = sample.lin_accel;
+            latest_mag_cal_quality = sample.mag_cal_quality;
+            latest_timestamp = sample.timestamp;
+            euler_counter += 1; // every sample from rotation vector increments
+            portEXIT_CRITICAL(&global_spinlock);
 
-        // Acceleration corrected since original calculation accounted for gravity, even though sensor did that already
-        double ax = current_lin_accel.x;
-        double ay = current_lin_accel.y;
-        double az = current_lin_accel.z;
+            // use sample for estimation
+            auto current_lin_accel = sample.lin_accel;
+            auto current_euler = sample.euler;
+            auto current_vel = latest_velocity; // velocity derived from previous cycle
+            auto current_pos = latest_position;
+
+            // Acceleration corrected since original calculation accounted for gravity, even though sensor did that already
+            double ax = current_lin_accel.x;
+            double ay = current_lin_accel.y;
+            double az = current_lin_accel.z;
+
+            double roll_deg = current_euler.x;
+            double pitch_deg = current_euler.y;
+            double yaw_deg = current_euler.z;
+
+            // convert Euler angles from degrees to radians
+            double roll_rad = roll_deg * deg2rad;
+            double pitch_rad = pitch_deg * deg2rad;
+            double yaw_rad = yaw_deg * deg2rad;
+
+            // Compute rotation matrix elements for body-to-earth transformation
+            double cr = cos(roll_rad), sr = sin(roll_rad);
+            double cp = cos(pitch_rad), sp = sin(pitch_rad);
+            double cy = cos(yaw_rad), sy = sin(yaw_rad);
+
+            // Rotate acceleration vector (a_earth = R * a_body)
+            double a_ex = cy * cp * ax + (cy * sp * sr - sy * cr) * ay + (cy * sp * cr + sy * sr) * az;
+            double a_ey = sy * cp * ax + (sy * sp * sr + cy * cr) * ay + (sy * sp * cr - cy * sr) * az;
+            double a_ez = -sp * ax + cp * sr * ay + cp * cr * az;
+
+            // Integrate acceleration to update velocity
+            current_vel.x += a_ex * dt;
+            current_vel.y += a_ey * dt;
+            current_vel.z += a_ez * dt;
+
+            // Integrate velocity to update position (global variable)
+            current_pos.x += current_vel.x * dt;
+            current_pos.y += current_vel.y * dt;
+            current_pos.z += current_vel.z * dt;
+
+            // Update globals
+            portENTER_CRITICAL(&global_spinlock);
+            latest_velocity = current_vel;
+            latest_position = current_pos;
+            portEXIT_CRITICAL(&global_spinlock);
+        }
+        // wait for next cycle (ensures at least dt milliseconds between loops even if no sample)
+        vTaskDelay(pdMS_TO_TICKS(dt_ms));
+    }
+}
 
         double roll_deg = current_euler.x;
         double pitch_deg = current_euler.y;
@@ -181,6 +240,13 @@ void testServo() {
 
 extern "C" void app_main(void)
 {
+    // create queue used by IMU callback -> control task
+    imu_queue = xQueueCreate(20, sizeof(imu_sample_t));
+    if (imu_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create IMU queue");
+        return;
+    }
+
     //Initialise I2C with error checking
     esp_err_t i2c_result = i2c_master_init();
     if (i2c_result == ESP_OK) {
