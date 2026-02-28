@@ -19,4 +19,4 @@ int32_t euler_counter = 0; // Initialize counter to 0
 double temperature;
 double pressure;
 double altitude;
-bool estop_triggered = false;
+std::atomic<bool> estop_triggered{false};
