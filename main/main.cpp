@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <inttypes.h>
 //#include <esp_system.h> // Include for esp_cpu_get_load
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
@@ -55,7 +56,7 @@ void measure_datarate(void *pvParameters)
 
         //logging message with latest data
         if (!estop_triggered) {
-            ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Angular Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Linear Velocity: (x: %.2f y: %.2f z: %.2f) [m/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", \
+            ESP_LOGI(TAG, "Seconds since boot (s): %llu, euler datapoints %" PRId32 ", Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Angular Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Linear Velocity: (x: %.2f y: %.2f z: %.2f) [m/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %" PRIu32, \
                 (t_now/1000000), ec, pos.x, pos.y, pos.z, \
                 euler.x, euler.y, euler.z, \
                 ang_vel.x, ang_vel.y, ang_vel.z, \
@@ -76,7 +77,7 @@ void measure_datarate(void *pvParameters)
 void state_estimation(void *pvParameters)
 {
     const double dt = 0.01; // seconds 0.01s = (100Hz)
-    const double dt_ms = dt*1000; // ms
+    const uint32_t dt_ms = 10; // ms
     //static double vx = 0, vy = 0, vz = 0; // local velocity integration
     const double deg2rad = 3.14159265358979323846 / 180.0;
     while (1)
@@ -163,7 +164,9 @@ void bmp390_task(void *pvParameters)
                 ESP_LOGI(TAG, "Temperature: %.2f °C, Pressure: %.2f Pa, Altitude: %.2f m", t, p, a);
             }
         } else {
-            ESP_LOGE(TAG, "Failed to read data from BMP390 sensor");
+            if (!estop_triggered) {
+                ESP_LOGE(TAG, "Failed to read data from BMP390 sensor");
+            }
         } 
         vTaskDelay(pdMS_TO_TICKS(500)); //Run every 0.5 seconds?
     }

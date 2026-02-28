@@ -1,6 +1,7 @@
 #ifndef GLOBALVARS_HPP
 #define GLOBALVARS_HPP
 
+#include <atomic>
 #include "esp_log.h"
 #include <vector>
 #include <BNO08xGlobalTypes.hpp>
@@ -36,7 +37,7 @@ typedef struct {
 
 extern latest_lin_velocity_t latest_velocity;
 
-extern volatile bool estop_triggered;
+extern std::atomic<bool> estop_triggered;
 
 // Data storage (using vectors for dynamic storage)
 
