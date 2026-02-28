@@ -21,7 +21,7 @@ static std::atomic<uint32_t> send_success_count(0);
 static std::atomic<uint32_t> send_fail_count(0);
 
 //callback function for send status
-void on_data_sent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
+void on_data_sent(const esp_now_send_info_t *info, esp_now_send_status_t status) {
     send_pending = false;
     if (status == ESP_NOW_SEND_SUCCESS) {
         send_success_count++;
