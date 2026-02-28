@@ -54,14 +54,16 @@ void measure_datarate(void *pvParameters)
         portEXIT_CRITICAL(&global_spinlock);
 
         //logging message with latest data
-        ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Angular Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Linear Velocity: (x: %.2f y: %.2f z: %.2f) [m/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", \
-            (t_now/1000000), ec, pos.x, pos.y, pos.z, \
-            euler.x, euler.y, euler.z, \
-            ang_vel.x, ang_vel.y, ang_vel.z, \
-            vel.x, vel.y, vel.z, \
-            grav.x, grav.y, grav.z, \
-            ang_accel.x, ang_accel.y, ang_accel.z, \
-            lin_accel.x, lin_accel.y, lin_accel.z, free_heap_size);
+        if (!estop_triggered) {
+            ESP_LOGI(TAG, "Seconds since boot (s): %lld, euler datapoints %li, Latest Pos: (x: %.2f y: %.2f z: %.2f), Latest Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg], Latest Angular Velocity: (x: %.2f y: %.2f z: %.2f)[rad/s], Latest Linear Velocity: (x: %.2f y: %.2f z: %.2f) [m/s], Latest Gravity: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Angular Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Latest Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2], Free Heap Size %u", \
+                (t_now/1000000), ec, pos.x, pos.y, pos.z, \
+                euler.x, euler.y, euler.z, \
+                ang_vel.x, ang_vel.y, ang_vel.z, \
+                vel.x, vel.y, vel.z, \
+                grav.x, grav.y, grav.z, \
+                ang_accel.x, ang_accel.y, ang_accel.z, \
+                lin_accel.x, lin_accel.y, lin_accel.z, free_heap_size);
+        }
 
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
@@ -129,14 +131,17 @@ void state_estimation(void *pvParameters)
 
         // wait for next cycle
         vTaskDelay(pdMS_TO_TICKS(dt_ms));
+
     }
 }
 
 void esp_now_task(void *pvParameters)
 {
     while(1) {
-        esp_now_send_data();
-        vTaskDelay(pdMS_TO_TICKS(1)); // Send every 1ms (1000 Hz) - gives IDLE task time to run
+        if (!estop_triggered) {
+            esp_now_send_data();
+        }
+        vTaskDelay(pdMS_TO_TICKS(10)); //send every 10ms
     }
 }
 
@@ -154,7 +159,9 @@ void bmp390_task(void *pvParameters)
             altitude = a;
             portEXIT_CRITICAL(&global_spinlock);
 
-            ESP_LOGI(TAG, "Temperature: %.2f °C, Pressure: %.2f Pa, Altitude: %.2f m", t, p, a);
+            if (!estop_triggered) {
+                ESP_LOGI(TAG, "Temperature: %.2f °C, Pressure: %.2f Pa, Altitude: %.2f m", t, p, a);
+            }
         } else {
             ESP_LOGE(TAG, "Failed to read data from BMP390 sensor");
         } 
@@ -201,8 +208,8 @@ extern "C" void app_main(void)
     imu_init();
 
     // Create the vector logging task with higher stack
-    BaseType_t measure_datarate_task = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 8192, NULL, 1, NULL, APP_CPU_NUM);
-    if (measure_datarate_task != pdPASS) {
+    BaseType_t measure_datarate_result = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 8192, NULL, 1, NULL, APP_CPU_NUM);
+    if (measure_datarate_result != pdPASS) {
         ESP_LOGE(TAG, "Failed to create vector logging task!");
     } else {
         ESP_LOGI(TAG, "Vector logging task started.");
