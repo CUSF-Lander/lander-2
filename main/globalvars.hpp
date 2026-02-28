@@ -36,6 +36,8 @@ typedef struct {
 
 extern latest_lin_velocity_t latest_velocity;
 
+extern volatile bool estop_triggered;
+
 // Data storage (using vectors for dynamic storage)
 
 

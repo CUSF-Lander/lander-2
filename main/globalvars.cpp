@@ -19,3 +19,4 @@ int32_t euler_counter = 0; // Initialize counter to 0
 double temperature;
 double pressure;
 double altitude;
+volatile bool estop_triggered = false;
