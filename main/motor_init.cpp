@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "globalvars.hpp"
 
 // Include the DShot library
 #include "DShotRMT.h"
@@ -20,9 +21,9 @@ void init_2_motors(void* pvParameters)
         initializeMotor(GPIO_NUM_5, RMT_CHANNEL_1);
         */
 
-    //pin configurations: (change these to the correct GPIO pins)
+    //pin configurations: (changed motor2 to 18 as IMU was also initialised there)
     gpio_num_t dshot_gpio = GPIO_NUM_4;
-    gpio_num_t dshot_gpio2 = GPIO_NUM_5;
+    gpio_num_t dshot_gpio2 = GPIO_NUM_18;
     rmt_channel_t rmt_channel = RMT_CHANNEL_0;
     rmt_channel_t rmt_channel2 = RMT_CHANNEL_1;
 
@@ -74,6 +75,14 @@ void init_2_motors(void* pvParameters)
     // Main control loop - send the 5% throttle command continuously
     ESP_LOGI(TAG, "Entering control loop with 5%% throttle");
     while (true) {
+        if (estop_triggered) {
+            //send 0 throttle to stop motors
+            esc.sendThrottle(0);
+            esc2.sendThrottle(0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
         // Send the throttle % command
         esp_err_t throttle_result = esc.sendThrottle(throttle_percent);
         /*if (throttle_result != ESP_OK) {

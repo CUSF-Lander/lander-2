@@ -28,6 +28,11 @@ typedef struct __attribute__((packed)) {
 
 } esp_now_data_t;
 
+// ESP-NOW command structure for ground station to lander
+typedef struct __attribute__((packed)) {
+    uint8_t command; // 1 = ESTOP
+} esp_now_cmd_t;
+
 void init_espnow_sender();
 void esp_now_send_data();
 
