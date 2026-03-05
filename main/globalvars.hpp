@@ -37,6 +37,14 @@ typedef struct {
 
 extern latest_lin_velocity_t latest_velocity;
 
+typedef struct {
+    double x;
+    double y;
+    double z;
+} gps_position_t;
+
+extern gps_position_t latest_gps_position;
+
 extern std::atomic<bool> estop_triggered;
 
 // Data storage (using vectors for dynamic storage)

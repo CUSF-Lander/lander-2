@@ -1,4 +1,5 @@
 idf_component_register(SRCS "main.cpp"
+                         "Kf_symbolic.cpp"
                          "motor_init.cpp"
                          "imu_init.cpp"
                          "globalvars.cpp"
@@ -8,4 +9,4 @@ idf_component_register(SRCS "main.cpp"
                          "i2c/servo.cpp"
                          "i2c/bmp390.cpp"
                     INCLUDE_DIRS "i2c"
-                    REQUIRES esp32_BNO08x esp_wifi esp32-dshot-master nvs_flash)
+                    REQUIRES esp32_BNO08x esp_wifi esp32-dshot-master nvs_flash esp-dsp)

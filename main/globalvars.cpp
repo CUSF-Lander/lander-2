@@ -14,6 +14,7 @@ bno08x_accel_t latest_lin_accel_data;
 bno08x_magf_t latest_mag_cal_quality;
 latest_position_t latest_position = {0.0, 0.0, 0.0};
 latest_lin_velocity_t latest_velocity = {0.0, 0.0, 0.0}; // Initialize velocity to 0
+gps_position_t latest_gps_position = {0.0, 0.0, 0.0};
 int64_t latest_timestamp = 0; // Initialize timestamp to 0
 int32_t euler_counter = 0; // Initialize counter to 0
 double temperature;

@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <inttypes.h>
+#include <cmath>
+#include <string.h>
+#include "Kf_symbolic.hpp"
 //#include <esp_system.h> // Include for esp_cpu_get_load
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
@@ -73,66 +76,208 @@ void measure_datarate(void *pvParameters)
     }
 }
 
-// New state estimation task: 100Hz (10ms period)
+// Kalman filter state estimation task: 100Hz (10ms period)
+//
+// State vector X (18x1), row-major index:
+//   [0=x,  1=y,  2=z,  3=roll, 4=pitch, 5=yaw,       (position / attitude, m / rad)
+//    6=vx, 7=vy, 8=vz, 9=wx,  10=wy,   11=wz,         (velocity / ang-rate, m/s / rad/s)
+//    12=ax,13=ay,14=az,15=αx,  16=αy,  17=αz]         (accel / ang-accel, m/s² / rad/s²)
+//
+// Control input U (4x1): [a1 (gimbal1), a2 (gimbal2), wt1 (motor1), wt2 (motor2)]
+//
+// Measurement vector Z:
+//   without GPS (10x1): [roll,pitch,yaw, ax_body,ay_body,az_body, wx,wy,wz, baro_alt]
+//   with    GPS (13x1): same + [gps_x, gps_y, gps_z]
+//
+// H structure:
+//   H_imu (9×18)  — dynamic, linearised around current state (from update_kalman_matrices)
+//   H_nogps(10×18) — H_imu rows 0-8 + fixed baro row (→ z, col 2)
+//   H_gps (13×18) — H_nogps rows 0-9 + fixed GPS rows (→ x,y,z, cols 0,1,2)
+//
+// Kalman equations:
+//   Xpre = A*X + B*U
+//   X    = Xpre + Kf*(Z - H*Xpre)
 void state_estimation(void *pvParameters)
 {
-    const double dt = 0.01; // seconds 0.01s = (100Hz)
-    const uint32_t dt_ms = 10; // ms
-    //static double vx = 0, vy = 0, vz = 0; // local velocity integration
-    const double deg2rad = 3.14159265358979323846 / 180.0;
+    constexpr uint32_t dt_ms = 10;
+    constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
+
+    // -------------------------------------------------------------------------
+    // Vehicle physical constants — PLACEHOLDER: fill in before use
+    // -------------------------------------------------------------------------
+    constexpr float KT   = 0.0f;   // thrust coefficient        [N/(rad/s)²]
+    constexpr float KM   = 0.0f;   // motor torque coefficient  [N·m/(rad/s)²]
+    constexpr float ARM  = 0.0f;   // gimbal moment arm         [m]
+    constexpr float MASS = 1.0f;   // vehicle mass              [kg]
+    constexpr float GRAV = 9.81f;  // gravitational acceleration [m/s²]
+    constexpr float JX   = 1.0f;   // moment of inertia x       [kg·m²]
+    constexpr float JY   = 1.0f;   // moment of inertia y       [kg·m²]
+    constexpr float JZ   = 1.0f;   // moment of inertia z       [kg·m²]
+
+    // -------------------------------------------------------------------------
+    // State vector — zero-initialised, persists across iterations
+    // -------------------------------------------------------------------------
+    static float X[18] = {0};
+
+    // -------------------------------------------------------------------------
+    // Dynamic matrices (rebuilt each iteration via update_kalman_matrices)
+    // dspm::Mat uses heap storage; static ensures single allocation at task start.
+    // -------------------------------------------------------------------------
+    static dspm::Mat A(18, 18);
+    static dspm::Mat B(18,  4);
+    static dspm::Mat H_imu(9, 18);
+
+    // -------------------------------------------------------------------------
+    // H_nogps (10×18): H_imu rows 0-8 (copied each loop) + fixed baro row 9
+    // H_gps   (13×18): H_nogps rows 0-9 (copied each loop) + fixed GPS rows 10-12
+    // Fixed rows are set once here; memcpy inside the loop only touches rows 0-8/0-9.
+    // -------------------------------------------------------------------------
+    static float H_nogps_full[10 * 18] = {0};
+    static float H_gps_full[13 * 18]   = {0};
+
+    // Baro row (row 9 in both): altitude → z (state col 2)
+    H_nogps_full[9 * 18 + 2] = 1.0f;
+    H_gps_full  [9 * 18 + 2] = 1.0f;
+    // GPS rows (rows 10-12 in H_gps_full): direct x, y, z position measurements
+    H_gps_full[10 * 18 + 0] = 1.0f;  // GPS x → state col 0
+    H_gps_full[11 * 18 + 1] = 1.0f;  // GPS y → state col 1
+    H_gps_full[12 * 18 + 2] = 1.0f;  // GPS z → state col 2
+
+    // -------------------------------------------------------------------------
+    // Kf_nogps (18×10) and Kf_gps (18×13) — fixed Kalman gains, row-major
+    // PLACEHOLDER: fill in tuned values before use.
+    // -------------------------------------------------------------------------
+    static const float Kf_nogps[18 * 10] = {0};
+    static const float Kf_gps[18 * 13]   = {0};
+
+    // GPS freshness tracking
+    static float last_gps[3] = {0.0f, 0.0f, 0.0f};
+
     while (1)
     {
-        // read measured linear acceleration and Euler angles (in degrees) from globals
+        // -----------------------------------------------------------------
+        // 1. Read sensor data under spinlock
+        // -----------------------------------------------------------------
         portENTER_CRITICAL(&global_spinlock);
-        auto current_lin_accel = latest_lin_accel_data;
-        auto current_euler = latest_euler_data;
-        auto current_vel = latest_velocity;
-        auto current_pos = latest_position;
+        auto meas_euler   = latest_euler_data;
+        auto meas_ang_vel = latest_ang_velocity_data;
+        auto meas_lin_acc = latest_lin_accel_data;
+        double baro_alt   = altitude;
+        double gps_x_d    = latest_gps_position.x;
+        double gps_y_d    = latest_gps_position.y;
+        double gps_z_d    = latest_gps_position.z;
         portEXIT_CRITICAL(&global_spinlock);
 
-        // Acceleration corrected since original calculation accounted for gravity, even though sensor did that already
-        double ax = current_lin_accel.x;
-        double ay = current_lin_accel.y;
-        double az = current_lin_accel.z;
+        float gps_x = static_cast<float>(gps_x_d);
+        float gps_y = static_cast<float>(gps_y_d);
+        float gps_z = static_cast<float>(gps_z_d);
 
-        double roll_deg = current_euler.x;
-        double pitch_deg = current_euler.y;
-        double yaw_deg = current_euler.z;
+        // -----------------------------------------------------------------
+        // 2. GPS freshness check
+        // -----------------------------------------------------------------
+        bool gps_present = (last_gps[0] != gps_x || last_gps[1] != gps_y || last_gps[2] != gps_z);
+        if (gps_present) {
+            last_gps[0] = gps_x;
+            last_gps[1] = gps_y;
+            last_gps[2] = gps_z;
+        }
 
-        // convert Euler angles from degrees to radians
-        double roll_rad = roll_deg * deg2rad;
-        double pitch_rad = pitch_deg * deg2rad;
-        double yaw_rad = yaw_deg * deg2rad;
+        // -----------------------------------------------------------------
+        // 3. Build control input U = [a1, a2, wt1, wt2]
+        //    PLACEHOLDER: populate with actual actuator readings when available.
+        // -----------------------------------------------------------------
+        float U[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        // U[0] = gimbal1_angle; U[1] = gimbal2_angle;
+        // U[2] = motor1_speed;  U[3] = motor2_speed;
 
-        // Compute rotation matrix elements for body-to-earth transformation
-        double cr = cos(roll_rad), sr = sin(roll_rad);
-        double cp = cos(pitch_rad), sp = sin(pitch_rad);
-        double cy = cos(yaw_rad), sy = sin(yaw_rad);
+        // -----------------------------------------------------------------
+        // 4. Rebuild linearised A, B, H_imu around current state and inputs
+        // -----------------------------------------------------------------
+        update_kalman_matrices(A, B, H_imu,
+            X[3],  X[4],  X[5],   // roll, pitch, yaw
+            X[12], X[13], X[14],  // body-frame ax, ay, az
+            U[2],  U[3],          // wt1, wt2 (motor speeds)
+            X[9],  X[10], X[11], // wx, wy, wz
+            KT, KM, U[0], U[1], ARM, MASS, GRAV, JX, JY, JZ);
 
-        // Rotate acceleration vector (a_earth = R * a_body)
-        double a_ex = cy * cp * ax + (cy * sp * sr - sy * cr) * ay + (cy * sp * cr + sy * sr) * az;
-        double a_ey = sy * cp * ax + (sy * sp * sr + cy * cr) * ay + (sy * sp * cr - cy * sr) * az;
-        double a_ez = -sp * ax + cp * sr * ay + cp * cr * az;
+        // Copy dynamic H_imu rows into the combined matrices (rows 0–8 only;
+        // baro and GPS rows were set once before the loop and are not touched).
+        memcpy(H_nogps_full, H_imu.data, 9 * 18 * sizeof(float));
+        memcpy(H_gps_full,   H_imu.data, 9 * 18 * sizeof(float));
 
-        // Integrate acceleration to update velocity
-        current_vel.x += a_ex * dt;
-        current_vel.y += a_ey * dt;
-        current_vel.z += a_ez * dt;
+        // -----------------------------------------------------------------
+        // 5. Build measurement vector Z and select H / Kf
+        // -----------------------------------------------------------------
+        float Z[13] = {0};
+        Z[0] = meas_euler.x * deg2rad;               // roll  [rad]
+        Z[1] = meas_euler.y * deg2rad;               // pitch [rad]
+        Z[2] = meas_euler.z * deg2rad;               // yaw   [rad]
+        Z[3] = static_cast<float>(meas_lin_acc.x);   // ax body [m/s²]
+        Z[4] = static_cast<float>(meas_lin_acc.y);   // ay body
+        Z[5] = static_cast<float>(meas_lin_acc.z);   // az body
+        Z[6] = static_cast<float>(meas_ang_vel.x);   // wx [rad/s]
+        Z[7] = static_cast<float>(meas_ang_vel.y);   // wy
+        Z[8] = static_cast<float>(meas_ang_vel.z);   // wz
+        Z[9] = static_cast<float>(baro_alt);          // baro altitude [m]
 
-        // Integrate velocity to update position (global variable)
-        current_pos.x += current_vel.x * dt;
-        current_pos.y += current_vel.y * dt;
-        current_pos.z += current_vel.z * dt;
+        const float *H_ptr;
+        const float *Kf_ptr;
+        int meas_dim;
 
-        // Update globals
+        if (gps_present) {
+            Z[10]    = gps_x;
+            Z[11]    = gps_y;
+            Z[12]    = gps_z;
+            H_ptr    = H_gps_full;
+            Kf_ptr   = Kf_gps;
+            meas_dim = 13;
+        } else {
+            H_ptr    = H_nogps_full;
+            Kf_ptr   = Kf_nogps;
+            meas_dim = 10;
+        }
+
+        // -----------------------------------------------------------------
+        // 6. Prediction: Xpre = A*X + B*U
+        // -----------------------------------------------------------------
+        float Xpre[18]  = {0};
+        float tmp18[18] = {0};
+        float bu18[18]  = {0};
+
+        dspm_mult_f32(A.data, X,    tmp18, 18, 18, 1);  // A(18×18) * X(18×1)
+        dspm_mult_f32(B.data, U,    bu18,  18,  4, 1);  // B(18×4)  * U(4×1)
+        for (int i = 0; i < 18; i++) Xpre[i] = tmp18[i] + bu18[i];
+
+        // -----------------------------------------------------------------
+        // 7. Innovation: innov = Z - H*Xpre
+        // -----------------------------------------------------------------
+        float HXpre[13] = {0};
+        float innov[13] = {0};
+
+        dspm_mult_f32(H_ptr, Xpre, HXpre, meas_dim, 18, 1);  // H(m×18) * Xpre(18×1)
+        for (int i = 0; i < meas_dim; i++) innov[i] = Z[i] - HXpre[i];
+
+        // -----------------------------------------------------------------
+        // 8. Update: X = Xpre + Kf*innov
+        // -----------------------------------------------------------------
+        float Kf_innov[18] = {0};
+
+        dspm_mult_f32(Kf_ptr, innov, Kf_innov, 18, meas_dim, 1);  // Kf(18×m) * innov(m×1)
+        for (int i = 0; i < 18; i++) X[i] = Xpre[i] + Kf_innov[i];
+
+        // -----------------------------------------------------------------
+        // 9. Write estimated state to globals
+        // -----------------------------------------------------------------
         portENTER_CRITICAL(&global_spinlock);
-        latest_velocity = current_vel;
-        latest_position = current_pos;
+        latest_position.x = static_cast<double>(X[0]);
+        latest_position.y = static_cast<double>(X[1]);
+        latest_position.z = static_cast<double>(X[2]);
+        latest_velocity.x = static_cast<double>(X[6]);
+        latest_velocity.y = static_cast<double>(X[7]);
+        latest_velocity.z = static_cast<double>(X[8]);
         portEXIT_CRITICAL(&global_spinlock);
 
-        // wait for next cycle
         vTaskDelay(pdMS_TO_TICKS(dt_ms));
-
     }
 }
 
