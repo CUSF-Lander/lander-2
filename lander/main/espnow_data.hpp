@@ -1,5 +1,5 @@
-#ifndef ESPNOW_INIT_HPP
-#define ESPNOW_INIT_HPP
+#ifndef ESPNOW_DATA_HPP
+#define ESPNOW_DATA_HPP
 
 #include <cstdint>
 
@@ -8,32 +8,29 @@ typedef struct __attribute__((packed)) {
     uint32_t sequence;
     uint32_t timestamp;
     
-    //Euler Angles
+    //euler angles
     float roll;
     float pitch;
     float yaw;
     
-    //Linear Acceleration
+    //linear acceleration
     float lin_acc_x;
     float lin_acc_y;
     float lin_acc_z;
     
-    //Position
+    //position
     float pos_x;
     float pos_y;
     float pos_z;
     
-    //Environment
+    //environment
     float pressure;
 
 } esp_now_data_t;
 
-// ESP-NOW command structure for ground station to lander
+//ESP-NOW command structure for ground station to lander
 typedef struct __attribute__((packed)) {
-    uint8_t command; // 1 = ESTOP
+    uint8_t command;
 } esp_now_cmd_t;
-
-void init_espnow_sender();
-void esp_now_send_data();
 
 #endif
