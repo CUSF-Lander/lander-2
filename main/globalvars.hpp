@@ -45,6 +45,14 @@ typedef struct {
 
 extern gps_position_t latest_gps_position;
 
+// Output of the position controller: desired roll and pitch [rad] for the hover controller
+typedef struct {
+    float roll;   // desired roll  [rad]
+    float pitch;  // desired pitch [rad]
+} u_pos_t;
+
+extern u_pos_t U_pos;
+
 extern std::atomic<bool> estop_triggered;
 
 // Data storage (using vectors for dynamic storage)

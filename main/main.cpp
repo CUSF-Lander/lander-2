@@ -15,6 +15,11 @@
 
 static const constexpr char* TAG = "Main";
 
+// Clamp v to [lo, hi]
+static inline float limit_f(float v, float lo, float hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
 
 char pmem[512] = {0}; // Buffer to store the CPU usage data
 
@@ -281,6 +286,108 @@ void state_estimation(void *pvParameters)
     }
 }
 
+// Position controller (LQR outer loop) — runs at POS_CTRL_PERIOD_MS
+//
+// Reads x, y, vx, vy, yaw from the Kalman filter globals.
+// Computes:  output = K_pos * [x_err, y_err, vx_err, vy_err, int_x, int_y]'
+// Writes:    U_pos.roll / U_pos.pitch — desired angles [rad] for the hover controller.
+//
+// State error is rotated into the body frame using the current yaw before the
+// LQR gain is applied (hover assumption: roll ≈ 0, pitch ≈ 0).
+void position_controller(void *pvParameters)
+{
+    // Task timing — CONTROL_LOOP_INTERVAL must equal PERIOD_MS / 1000
+    constexpr uint32_t PERIOD_MS            = 20;       // 50 Hz
+    constexpr float    CONTROL_LOOP_INTERVAL = 0.02f;   // [s]  matches PERIOD_MS
+
+    // Integral windup limit — PLACEHOLDER: tune for the vehicle
+    constexpr float pos_int_limit = 0.5f;
+
+    // Output saturation: ±10 degrees in roll / pitch
+    constexpr float OUT_LIMIT = 10.0f * static_cast<float>(M_PI / 180.0);
+
+    // K_pos (2×6) — LQR gain matrix, row-major
+    // output = K_pos * [x_err, y_err, vx_err, vy_err, int_x_err, int_y_err]'
+    // PLACEHOLDER: fill in tuned values before use.
+    static const float K_pos[2 * 6] = {0};
+
+    // SP_pos (6×1) — position setpoint; all zeros = hover at origin
+    static const float SP_pos[6] = {0, 0, 0, 0, 0, 0};
+
+    // Integral accumulators (persist across iterations)
+    static float error_integral_x = 0.0f;
+    static float error_integral_y = 0.0f;
+
+    while (1)
+    {
+        // -----------------------------------------------------------------
+        // 1. Read Kalman filter outputs under spinlock
+        // -----------------------------------------------------------------
+        portENTER_CRITICAL(&global_spinlock);
+        float x   = static_cast<float>(latest_position.x);
+        float y   = static_cast<float>(latest_position.y);
+        float vx  = static_cast<float>(latest_velocity.x);
+        float vy  = static_cast<float>(latest_velocity.y);
+        float yaw = latest_euler_data.z * static_cast<float>(M_PI / 180.0); // deg → rad
+        portEXIT_CRITICAL(&global_spinlock);
+
+        // -----------------------------------------------------------------
+        // 2. Build state and compute error = SP_pos - X_pos
+        // -----------------------------------------------------------------
+        float X_pos[6] = {x, y, vx, vy, 0.0f, 0.0f};
+        float error[6];
+        for (int i = 0; i < 6; i++) error[i] = SP_pos[i] - X_pos[i];
+
+        // -----------------------------------------------------------------
+        // 3. Rotate position and velocity errors to body frame
+        //    (yaw rotation only — valid under hover assumption roll≈0, pitch≈0)
+        //    Intermediate values saved so each rotation uses original components.
+        // -----------------------------------------------------------------
+        float cyaw = cosf(yaw), syaw = sinf(yaw);
+
+        float ex  = error[0]*cyaw + error[1]*syaw;
+        float ey  = error[1]*cyaw - error[0]*syaw;
+        float evx = error[2]*cyaw + error[3]*syaw;
+        float evy = error[3]*cyaw - error[2]*syaw;
+        error[0] = ex;
+        error[1] = ey;
+        error[2] = evx;
+        error[3] = evy;
+
+        // -----------------------------------------------------------------
+        // 4. Euler-integrate x/y errors; clamp to prevent windup
+        // -----------------------------------------------------------------
+        error_integral_x += error[0] * CONTROL_LOOP_INTERVAL;
+        error_integral_y += error[1] * CONTROL_LOOP_INTERVAL;
+
+        error_integral_x = limit_f(error_integral_x, -pos_int_limit, pos_int_limit);
+        error_integral_y = limit_f(error_integral_y, -pos_int_limit, pos_int_limit);
+
+        error[4] = error_integral_x;
+        error[5] = error_integral_y;
+
+        // -----------------------------------------------------------------
+        // 5. LQR: output (2×1) = K_pos (2×6) * error (6×1)
+        // -----------------------------------------------------------------
+        float output[2] = {0.0f, 0.0f};
+        dspm_mult_f32(K_pos, error, output, 2, 6, 1);
+
+        // Clamp output to ±10° in roll and pitch
+        output[0] = limit_f(output[0], -OUT_LIMIT, OUT_LIMIT);
+        output[1] = limit_f(output[1], -OUT_LIMIT, OUT_LIMIT);
+
+        // -----------------------------------------------------------------
+        // 6. Publish U_pos for the hover controller
+        // -----------------------------------------------------------------
+        portENTER_CRITICAL(&global_spinlock);
+        U_pos.roll  = output[0];
+        U_pos.pitch = output[1];
+        portEXIT_CRITICAL(&global_spinlock);
+
+        vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
+    }
+}
+
 void esp_now_task(void *pvParameters)
 {
     while(1) {
@@ -370,6 +477,14 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "Failed to create state estimation task!");
     } else {
         ESP_LOGI(TAG, "State estimation task started.");
+    }
+
+    // Launch position controller task (LQR outer loop, 50 Hz)
+    BaseType_t pos_ctrl_task = xTaskCreatePinnedToCore(position_controller, "pos_ctrl", 4096, NULL, 2, NULL, APP_CPU_NUM);
+    if(pos_ctrl_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create position controller task!");
+    } else {
+        ESP_LOGI(TAG, "Position controller task started.");
     }
 
     // while (1)
