@@ -37,6 +37,12 @@ void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *data, int
         if (cmd->command == 1) { // ESTOP
             ESP_LOGW(TAG, "ESTOP COMMAND RECEIVED!");
             estop_triggered = true;
+        } else if (cmd->command == 2) { //ZERO_IMU
+            ESP_LOGW(TAG, "ZERO IMU COMMAND RECEIVED!");
+            portENTER_CRITICAL(&global_spinlock);
+            latest_velocity = {0.0, 0.0, 0.0};
+            latest_position = {0.0, 0.0, 0.0};
+            portEXIT_CRITICAL(&global_spinlock);
         }
     }
 }
