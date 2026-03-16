@@ -53,6 +53,17 @@ typedef struct {
 
 extern u_pos_t U_pos;
 
+// Output of the hover controller: actuator commands computed from LQR + thrust geometry
+typedef struct {
+    float alpha1;  // gimbal angle 1   [rad]
+    float alpha2;  // gimbal angle 2   [rad]
+    float omega1;  // motor 1 speed    [rad/s]
+    float omega2;  // motor 2 speed    [rad/s]
+    float lambda;  // motor thrust ratio [-]
+} u_hov_t;
+
+extern u_hov_t U_hov;
+
 extern std::atomic<bool> estop_triggered;
 
 // Data storage (using vectors for dynamic storage)

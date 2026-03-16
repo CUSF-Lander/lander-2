@@ -388,6 +388,137 @@ void position_controller(void *pvParameters)
     }
 }
 
+// Hover controller (LQR inner loop) — runs at 50 Hz
+//
+// Reads roll, pitch, yaw [rad], gx, gy, gz [rad/s] from IMU globals;
+//        z [m], vz [m/s] from KF globals; U_pos from position controller.
+//
+// State error (9×1): [roll, pitch, yaw, gx, gy, gz, z, vz, int_z]
+//   SP_hover[0..1] are augmented by U_pos.roll/pitch each iteration.
+//
+// LQR:        lqr_out (4×1) = K_hov (4×9) * error (9×1)
+//             lqr_out = [F1, F2, F3, Mz]
+//
+// Actuation mapping (thrust geometry):
+//   F_norm  = ||[F1, F2, F3]||
+//   alpha_1 = asin(F2 / F_norm)
+//   alpha_2 = acos(F3 / sqrt(F1² + F3²))
+//   omega_1 = sqrt(F_norm / Kt)
+//   lambda  = 1 - Mz / (c * F3)
+//   omega_2 = sqrt(|lambda * F_norm| / Kt)
+//
+// Writes result to U_hov global.
+void hover_controller(void *pvParameters)
+{
+    constexpr uint32_t PERIOD_MS             = 20;      // 50 Hz
+    constexpr float    CONTROL_LOOP_INTERVAL = 0.02f;   // [s]
+
+    constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
+
+    // Actuation mapping constants
+    constexpr float KT_ACT = 0.021f;  // thrust coefficient [N/(rad/s)²]
+    constexpr float C_ARM  = 0.05f;   // gimbal moment arm [m]
+
+    // Anti-windup throttle threshold — PLACEHOLDER: fill in before use
+    constexpr float MAX_THROTTLE   = 0.0f;  // maximum throttle value
+    constexpr float DSHOT_THROTTLE = 0.0f;  // current throttle PLACEHOLDER
+
+    // K_hov (4×9) — LQR gain matrix, row-major
+    // lqr_out = K_hov * [roll_err, pitch_err, yaw_err, gx_err, gy_err, gz_err, z_err, vz_err, int_z_err]'
+    // PLACEHOLDER: fill in tuned values before use.
+    static const float K_hov[4 * 9] = {0};
+
+    // SP_hover (9×1) — hover setpoint; all zeros (level attitude, hold position)
+    // SP_hover[0] and [1] are augmented by U_pos each iteration.
+    static const float SP_hover[9] = {0};
+
+    // Altitude integral accumulator
+    static float error_integral_z = 0.0f;
+
+    while (1)
+    {
+        // -----------------------------------------------------------------
+        // 1. Read sensor data under spinlock
+        // -----------------------------------------------------------------
+        portENTER_CRITICAL(&global_spinlock);
+        float roll  = latest_euler_data.x * deg2rad;
+        float pitch = latest_euler_data.y * deg2rad;
+        float yaw   = latest_euler_data.z * deg2rad;
+        float gx    = static_cast<float>(latest_ang_velocity_data.x);
+        float gy    = static_cast<float>(latest_ang_velocity_data.y);
+        float gz    = static_cast<float>(latest_ang_velocity_data.z);
+        float z     = static_cast<float>(latest_position.z);
+        float vz    = static_cast<float>(latest_velocity.z);
+        float upos_roll  = U_pos.roll;
+        float upos_pitch = U_pos.pitch;
+        portEXIT_CRITICAL(&global_spinlock);
+
+        // -----------------------------------------------------------------
+        // 2. Build reference: SP_hover augmented by position controller output
+        // -----------------------------------------------------------------
+        float ref[9];
+        for (int i = 0; i < 9; i++) ref[i] = SP_hover[i];
+        ref[0] += upos_roll;   // desired roll  [rad]
+        ref[1] += upos_pitch;  // desired pitch [rad]
+
+        // -----------------------------------------------------------------
+        // 3. Build state and compute error = ref - X
+        // -----------------------------------------------------------------
+        float X_hov[9] = {roll, pitch, yaw, gx, gy, gz, z, vz, 0.0f};
+        float error[9];
+        for (int i = 0; i < 9; i++) error[i] = ref[i] - X_hov[i];
+
+        // Wrap yaw error to (-π, π]
+        if (error[2] > static_cast<float>(M_PI))
+            error[2] -= 2.0f * static_cast<float>(M_PI);
+
+        // -----------------------------------------------------------------
+        // 4. Altitude integral with anti-windup
+        // -----------------------------------------------------------------
+        float error_z = error[6];
+        if (DSHOT_THROTTLE < MAX_THROTTLE || error_z < 0.0f) {
+            error_integral_z += error_z * CONTROL_LOOP_INTERVAL;
+        }
+        error[8] = error_integral_z;
+
+        // -----------------------------------------------------------------
+        // 5. LQR: lqr_out (4×1) = K_hov (4×9) * error (9×1)
+        //    lqr_out = [F1, F2, F3, Mz]
+        // -----------------------------------------------------------------
+        float lqr_out[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        dspm_mult_f32(K_hov, error, lqr_out, 4, 9, 1);
+
+        float F1 = lqr_out[0];
+        float F2 = lqr_out[1];
+        float F3 = lqr_out[2];
+        float Mz = lqr_out[3];
+
+        // -----------------------------------------------------------------
+        // 6. Actuation mapping: [F1, F2, F3, Mz] → [alpha1, alpha2, omega1, omega2, lambda]
+        // -----------------------------------------------------------------
+        float F_norm  = sqrtf(F1*F1 + F2*F2 + F3*F3);
+        float alpha_1 = asinf(F2 / F_norm);
+        float alpha_2 = acosf(F3 / sqrtf(F1*F1 + F3*F3));
+        float omega_1 = sqrtf(F_norm / KT_ACT);
+        float lambda  = 1.0f - (Mz / (C_ARM * F3));
+        float F_2norm = lambda * F_norm;
+        float omega_2 = sqrtf(fabsf(F_2norm) / KT_ACT);
+
+        // -----------------------------------------------------------------
+        // 7. Publish actuation output
+        // -----------------------------------------------------------------
+        portENTER_CRITICAL(&global_spinlock);
+        U_hov.alpha1 = alpha_1;
+        U_hov.alpha2 = alpha_2;
+        U_hov.omega1 = omega_1;
+        U_hov.omega2 = omega_2;
+        U_hov.lambda = lambda;
+        portEXIT_CRITICAL(&global_spinlock);
+
+        vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
+    }
+}
+
 void esp_now_task(void *pvParameters)
 {
     while(1) {
@@ -485,6 +616,14 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "Failed to create position controller task!");
     } else {
         ESP_LOGI(TAG, "Position controller task started.");
+    }
+
+    // Launch hover controller task (LQR inner loop, 50 Hz)
+    BaseType_t hov_ctrl_task = xTaskCreatePinnedToCore(hover_controller, "hov_ctrl", 4096, NULL, 2, NULL, APP_CPU_NUM);
+    if(hov_ctrl_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create hover controller task!");
+    } else {
+        ESP_LOGI(TAG, "Hover controller task started.");
     }
 
     // while (1)

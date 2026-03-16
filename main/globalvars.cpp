@@ -16,6 +16,7 @@ latest_position_t latest_position = {0.0, 0.0, 0.0};
 latest_lin_velocity_t latest_velocity = {0.0, 0.0, 0.0}; // Initialize velocity to 0
 gps_position_t latest_gps_position = {0.0, 0.0, 0.0};
 u_pos_t U_pos = {0.0f, 0.0f};
+u_hov_t U_hov = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 int64_t latest_timestamp = 0; // Initialize timestamp to 0
 int32_t euler_counter = 0; // Initialize counter to 0
 double temperature;
