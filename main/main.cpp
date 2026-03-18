@@ -300,11 +300,14 @@ void position_controller(void *pvParameters)
     constexpr uint32_t PERIOD_MS            = 20;       // 50 Hz
     constexpr float    CONTROL_LOOP_INTERVAL = 0.02f;   // [s]  matches PERIOD_MS
 
-    // Integral windup limit — PLACEHOLDER: tune for the vehicle
+    // limit integral values - TO TUNE
     constexpr float pos_int_limit = 0.5f;
 
+
+    constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
+
     // Output saturation: ±10 degrees in roll / pitch
-    constexpr float OUT_LIMIT = 10.0f * static_cast<float>(M_PI / 180.0);
+    constexpr float OUT_LIMIT = 10.0f * deg2rad;
 
     // K_pos (2×6) — LQR gain matrix, row-major
     // output = K_pos * [x_err, y_err, vx_err, vy_err, int_x_err, int_y_err]'
@@ -328,7 +331,7 @@ void position_controller(void *pvParameters)
         float y   = static_cast<float>(latest_position.y);
         float vx  = static_cast<float>(latest_velocity.x);
         float vy  = static_cast<float>(latest_velocity.y);
-        float yaw = latest_euler_data.z * static_cast<float>(M_PI / 180.0); // deg → rad
+        float yaw = latest_euler_data.z * deg2rad; // deg → rad
         portEXIT_CRITICAL(&global_spinlock);
 
         // -----------------------------------------------------------------
@@ -468,7 +471,7 @@ void hover_controller(void *pvParameters)
         float error[9];
         for (int i = 0; i < 9; i++) error[i] = ref[i] - X_hov[i];
 
-        // Wrap yaw error to (-π, π]
+        // Wrap yaw error
         if (error[2] > static_cast<float>(M_PI))
             error[2] -= 2.0f * static_cast<float>(M_PI);
 
