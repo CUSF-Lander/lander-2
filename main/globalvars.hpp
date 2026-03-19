@@ -38,6 +38,7 @@ typedef struct {
 extern latest_lin_velocity_t latest_velocity;
 
 extern std::atomic<bool> estop_triggered;
+extern std::atomic<bool> servo_testing_mode;
 
 // Data storage (using vectors for dynamic storage)
 
