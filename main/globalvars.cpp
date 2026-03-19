@@ -20,3 +20,4 @@ double temperature;
 double pressure;
 double altitude;
 std::atomic<bool> estop_triggered{false};
+std::atomic<bool> servo_testing_mode{true};

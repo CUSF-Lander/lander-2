@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <inttypes.h>
+#include <ctype.h>
 //#include <esp_system.h> // Include for esp_cpu_get_load
 #include <esp_heap_caps.h>
 #include "globalvars.hpp"
@@ -189,6 +190,83 @@ void testServo() {
     }
 }
 
+void servo_test_via_serial_blocking()
+{
+    setvbuf(stdin, NULL, _IONBF, 0);
+    ESP_LOGI(TAG, "Servo test mode is active. Press Enter after command.");
+    ESP_LOGI(TAG, "Format: <servo 0|1> <angle 0-180> (example: 1 90)");
+    ESP_LOGI(TAG, "Safety lock: test mode is blocking and will not continue full initialization.");
+
+    char line[64] = {0};
+    size_t idx = 0;
+
+    while (1) {
+        int ch = getchar();
+        if (ch == EOF) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
+        if (ch == '\r' || ch == '\n') {
+            if (idx == 0) {
+                continue;
+            }
+
+            line[idx] = '\0';
+            idx = 0;
+
+            int servo_id = -1;
+            int angle = -1;
+            int matched = sscanf(line, "%d %d", &servo_id, &angle);
+            if (matched != 2) {
+                matched = sscanf(line, "servo %d %d", &servo_id, &angle);
+            }
+
+            if (matched != 2) {
+                ESP_LOGW(TAG, "Invalid input. Use: <servo 0|1> <angle 0-180>");
+                continue;
+            }
+
+            if (servo_id != 0 && servo_id != 1) {
+                ESP_LOGW(TAG, "Invalid servo id %d. Allowed: 0 or 1", servo_id);
+                continue;
+            }
+
+            if (angle < 0 || angle > 180) {
+                ESP_LOGW(TAG, "Invalid angle %d. Allowed range: 0-180", angle);
+                continue;
+            }
+
+            esp_err_t err = pca9685_set_servo_angle((uint8_t)servo_id, (float)angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to move servo %d to %d deg: %s", servo_id, angle, esp_err_to_name(err));
+                continue;
+            }
+
+            ESP_LOGI(TAG, "Moved servo %d to %d deg", servo_id, angle);
+            continue;
+        }
+
+        if (ch == '\b' || ch == 127) {
+            if (idx > 0) {
+                idx--;
+            }
+            continue;
+        }
+
+        if (!isprint((unsigned char)ch)) {
+            continue;
+        }
+
+        if (idx < (sizeof(line) - 1)) {
+            line[idx++] = (char)ch;
+        } else {
+            idx = 0;
+            ESP_LOGW(TAG, "Input too long. Use: <servo 0|1> <angle 0-180>");
+        }
+    }
+}
+
 extern "C" void app_main(void)
 {
     //Initialise I2C with error checking
@@ -203,6 +281,16 @@ extern "C" void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(100)); //Let I2C stabilise
     
     pca9685_init();
+
+    if (servo_testing_mode.load()) {
+        ESP_LOGW(TAG, "servo_testing_mode=true. Entering blocking servo test loop before other init.");
+        servo_test_via_serial_blocking();
+        ESP_LOGE(TAG, "Safety lock: servo test mode returned unexpectedly. Halting initialization.");
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+
     bmp390_init(); 
     init_espnow_sender();
 
@@ -211,6 +299,8 @@ extern "C" void app_main(void)
     imu_init();
 
     // Create the vector logging task with higher stack
+    //todo temp disable here
+
     BaseType_t measure_datarate_result = xTaskCreatePinnedToCore(measure_datarate, "measure datarate", 8192, NULL, 1, NULL, APP_CPU_NUM);
     if (measure_datarate_result != pdPASS) {
         ESP_LOGE(TAG, "Failed to create vector logging task!");
@@ -227,22 +317,37 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "State estimation task started.");
     }
 
+
+    //end of temp disable 
+
+
+
     // while (1)
     // {
     //     // delay time is irrelevant, we just don't want to trip WDT
     //     vTaskDelay(100UL / portTICK_PERIOD_MS); //originally 10000UL
     // }
 
-    // Initialize the motor
+    // Initialize the motor (Not actually used)-------
     /*void all_motor_init(void){
         // Initialize the 2 motors with the specified GPIO pins and RMT channels
         initializeMotor(GPIO_NUM_4, RMT_CHANNEL_0);
         initializeMotor(GPIO_NUM_5, RMT_CHANNEL_1);
     }*/
-
+    //reverting to function based code for testing 
+    //init_2_motors();
+    // not actually used - end -----------
+    
     //code for RTOS Task
     //TODO IMU: Tempoarily disabled to test the IMU Only
     
+
+
+
+
+    
+    //todo: tempoarily disabled motor task 03-19
+
     BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 3, NULL, APP_CPU_NUM);
     if(motor_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create motor task!");
@@ -250,9 +355,6 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "motor task started.");
     }
     
-
-    //reverting to function based code for testing 
-    //init_2_motors();
 
     //move esp_now_task to CPU 0 to avoid watchdog issues on CPU 1
     BaseType_t esp_now_task_handle = xTaskCreatePinnedToCore(esp_now_task, "esp_now_task", 4096, NULL, 4, NULL, PRO_CPU_NUM);
@@ -269,11 +371,11 @@ extern "C" void app_main(void)
     } else {
         ESP_LOGI(TAG, "BMP390 task started.");
     }
-
-    //todo:code will never reach here as we are testing the motor in an infinite loop
+        
 
     while (1)
     {
+        //testServo;
         // delay time is irrelevant, we just don't want to trip WDT
         vTaskDelay(pdMS_TO_TICKS(500));
     }
