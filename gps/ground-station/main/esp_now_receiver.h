@@ -1,3 +1,4 @@
+#if 0
 #ifndef ESP_NOW_RECEIVER_H
 #define ESP_NOW_RECEIVER_H
 
@@ -49,3 +50,4 @@ void init_estop_task(void);
 #endif
 
 #endif // ESP_NOW_RECEIVER_H
+#endif

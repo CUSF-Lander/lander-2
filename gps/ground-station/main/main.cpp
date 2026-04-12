@@ -7,11 +7,12 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_event.h"
-#include "esp_wifi.h"
-#include "esp_now.h"
+// #include "esp_wifi.h"
+// #include "esp_now.h"
 #include "nvs_flash.h"
-#include "espnow_data.hpp"
-
+// #include "espnow_data.hpp"
+#include "uart.h"
+#if 0
 static const char *TAG = "ESP-NOW-RECEIVER";
 
 void esp_now_recv_callback(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len)
@@ -38,7 +39,6 @@ void esp_now_recv_callback(const esp_now_recv_info_t *recv_info, const uint8_t *
         ESP_LOG_BUFFER_HEX(TAG, data, len);
     }
 }
-
 //initialise WiFi in STA mode for ESP-NOW
 esp_err_t wifi_init(void)
 {
@@ -69,36 +69,38 @@ esp_err_t esp_now_init_receiver(void)
     ESP_LOGI(TAG, "ESP-NOW receiver initialized");
     return ESP_OK;
 }
-
+#endif
 extern "C" void app_main(void)
 {
     // Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
+    // esp_err_t ret = nvs_flash_init();
+    // if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    //     ESP_ERROR_CHECK(nvs_flash_erase());
+    //     ret = nvs_flash_init();
+    // }
+    // ESP_ERROR_CHECK(ret);
 
-    ESP_LOGI(TAG, "Starting ESP-NOW Ground Station Receiver");
+    // ESP_LOGI(TAG, "Starting ESP-NOW Ground Station Receiver");
 
-    // Initialize WiFi
-    ESP_ERROR_CHECK(wifi_init());
+    // // Initialize WiFi
+    // ESP_ERROR_CHECK(wifi_init());
 
-    // Initialize ESP-NOW
-    ESP_ERROR_CHECK(esp_now_init_receiver());
+    // // Initialize ESP-NOW
+    // ESP_ERROR_CHECK(esp_now_init_receiver());
 
-    // Initialize ESTOP task
-    init_estop_task();
+    // // Initialize ESTOP task
+    // init_estop_task();
 
-    // Print MAC address for reference
-    uint8_t mac[6];
-    esp_wifi_get_mac(WIFI_IF_STA, mac);
-    ESP_LOGI(TAG, "Receiver MAC Address: %02x:%02x:%02x:%02x:%02x:%02x",
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    // // Print MAC address for reference
+    // uint8_t mac[6];
+    // esp_wifi_get_mac(WIFI_IF_STA, mac);
+    // ESP_LOGI(TAG, "Receiver MAC Address: %02x:%02x:%02x:%02x:%02x:%02x",
+    //          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
-    ESP_LOGI(TAG, "ESP-NOW receiver ready. Waiting for data...");
-
+    // ESP_LOGI(TAG, "ESP-NOW receiver ready. Waiting for data...");
+    
+    Uart::init();
+    xTaskCreate(Uart::rx_task, "uart_rx_task", 1024 * 16, NULL, configMAX_PRIORITIES - 1, NULL);
     // Main loop - keep the task alive
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));

@@ -1,3 +1,4 @@
+#if 0
 #include "esp_now_receiver.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -343,3 +344,4 @@ void esp_now_receiver_print_stats(void)
     ESP_LOGI(TAG, "Total Bytes Received: %lu", total_bytes_received);
     ESP_LOGI(TAG, "===================================");
 }
+#endif

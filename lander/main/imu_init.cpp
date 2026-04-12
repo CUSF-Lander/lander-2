@@ -58,7 +58,7 @@ void imu_init()
                 static bno08x_euler_angle_t euler;
                 static bno08x_gyro_t velocity;
                 static bno08x_accel_t grav;
-                static bno08x_accel_t ang_accel;
+                static bno08x_accel_t an2r_accel;
                 static bno08x_accel_t lin_accel;
                 static bno08x_magf_t mag_cal_quality;
                 
