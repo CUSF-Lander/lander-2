@@ -6,7 +6,7 @@
 #include "string.h"
 #include "driver/gpio.h"
 #include "Parser.h"
-
+#include "comm.h"
 namespace Uart
 {
 
@@ -44,19 +44,71 @@ int sendData(const char* logName, const char* data)
 void rx_task(void *arg)
 {
     static const char *RX_TASK_TAG = "RX_TASK";
-    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
-    uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE + 1);
-    Parser parser;
+
+    // 2x RX_BUF_SIZE so a partial frame carried over from the previous read
+    // never causes an overflow when new bytes are appended behind it.
+    const size_t BUF_SIZE = RX_BUF_SIZE * 2;
+    uint8_t* buf = (uint8_t*)malloc(BUF_SIZE);
+    int buf_len = 0;
+
     while (1) {
-        const int rxBytes = uart_read_bytes(UART_NUM, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
-        if (rxBytes > 0) {
-            data[rxBytes] = 0;
-            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
-            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
-            parser.parse(data, rxBytes);
+        // Append freshly received bytes after any carry-over bytes.
+        int n = uart_read_bytes(UART_NUM, buf + buf_len,
+                                BUF_SIZE - buf_len,
+                                pdMS_TO_TICKS(100));
+        if (n > 0) buf_len += n;
+        if (buf_len == 0) continue;
+
+        // Scan the buffer for complete RTCM3 frames.
+        // RTCM3 frame layout:
+        //   byte 0      : 0xD3  (preamble)
+        //   bytes 1-2   : reserved(6 bits) + payload_length(10 bits)
+        //   bytes 3..N  : payload  (N = payload_length)
+        //   bytes N+1..N+3 : CRC24
+        int pos = 0;
+        while (pos < buf_len) {
+
+            // Scan forward to the next preamble byte.
+            if (buf[pos] != 0xD3) { pos++; continue; }
+
+            // Need at least 3 header bytes to read the length.
+            if (pos + 3 > buf_len) break;
+
+            // Extract the 10-bit payload length.
+            uint16_t payload_len = ((buf[pos + 1] & 0x03) << 8) | buf[pos + 2];
+
+            // RTCM3 payload is capped at 1023 bytes by the spec.
+            // A larger value means this 0xD3 is not a real preamble.
+            if (payload_len > 1023) { pos++; continue; }
+
+            uint16_t frame_len = 3 + payload_len + 3;  // header + payload + CRC
+
+            // Wait for more UART bytes if the frame is not yet complete.
+            if (pos + frame_len > (size_t)buf_len) break;
+
+            // Complete frame — forward it if a peer is registered.
+            if (WIFI::is_peer_known()) {
+                if (frame_len <= WIFI::MAX_CORRECTION_LEN) {
+                    WIFI::send_correction(buf + pos, (uint8_t)frame_len);
+                    ESP_LOGI(RX_TASK_TAG, "Sent RTCM frame: %u bytes", frame_len);
+                } else {
+                    // A single RTCM message exceeded 248 bytes — this is
+                    // unusual; log and drop rather than sending a corrupt frame.
+                    ESP_LOGW(RX_TASK_TAG, "RTCM frame %u bytes > MAX_CORRECTION_LEN, dropping", frame_len);
+                }
+            }
+
+            pos += frame_len;
+        }
+
+        // Shift any unprocessed bytes (partial frame) to the front of the
+        // buffer so they are prepended to the next UART read.
+        if (pos > 0) {
+            buf_len -= pos;
+            if (buf_len > 0) memmove(buf, buf + pos, buf_len);
         }
     }
-    free(data);
+    free(buf);
 }
 
 // Renamed from tx_task to send_command for clarity
