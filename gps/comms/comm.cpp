@@ -20,6 +20,18 @@ static GpsCallback        s_gps_cb        = nullptr;
 static uint8_t s_peer_mac[6] = {};
 static bool    s_peer_known  = false;
 
+// Fragmentation state — outgoing
+static uint8_t s_msg_id = 0;    // increments with every fragmented message sent
+
+// Reassembly state — incoming
+// RTCM3 max frame size: 3 header + 1023 payload + 3 CRC = 1029 bytes
+static constexpr size_t REASSEMBLY_BUF_SIZE = 1029;
+static uint8_t  s_reassembly_buf[REASSEMBLY_BUF_SIZE];
+static uint8_t  s_reassembly_msg_id   = 0xFF;   // msg_id currently being reassembled
+static uint8_t  s_reassembly_total    = 0;       // expected fragment count
+static uint8_t  s_reassembly_received = 0;       // fragments received so far
+static size_t   s_reassembly_len      = 0;       // bytes written into buf so far
+
 // ---------------------------------------------------------------------------
 // Internal ESP-NOW callbacks
 // ---------------------------------------------------------------------------
@@ -69,6 +81,45 @@ static void recv_cb(const esp_now_recv_info_t* recv_info,
             const auto* pkt = reinterpret_cast<const GpsPacket*>(data);
             if (s_gps_cb) {
                 s_gps_cb(pkt->position, src);
+            }
+            break;
+        }
+
+        case PacketType::FRAGMENT: {
+            if (len < static_cast<int>(sizeof(FragmentPacket) - MAX_FRAGMENT_DATA + 1)) {
+                ESP_LOGW(TAG, "FRAGMENT packet too short (%d bytes)", len);
+                break;
+            }
+            const auto* pkt = reinterpret_cast<const FragmentPacket*>(data);
+
+            // If this belongs to a different message than we were reassembling,
+            // start fresh (previous message was lost or never started).
+            if (pkt->msg_id != s_reassembly_msg_id) {
+                s_reassembly_msg_id   = pkt->msg_id;
+                s_reassembly_total    = pkt->total_frags;
+                s_reassembly_received = 0;
+                s_reassembly_len      = 0;
+            }
+
+            // Write this fragment's payload at the correct offset in the buffer.
+            size_t offset = pkt->frag_idx * MAX_FRAGMENT_DATA;
+            if (offset + pkt->len <= REASSEMBLY_BUF_SIZE) {
+                memcpy(s_reassembly_buf + offset, pkt->data, pkt->len);
+                s_reassembly_len = offset + pkt->len;
+                s_reassembly_received++;
+            } else {
+                ESP_LOGW(TAG, "FRAGMENT would overflow reassembly buffer, dropping");
+                break;
+            }
+
+            // Once all fragments have arrived, fire the correction callback.
+            if (s_reassembly_received == s_reassembly_total) {
+                ESP_LOGI(TAG, "Reassembled %u-fragment message: %u bytes",
+                         s_reassembly_total, (unsigned)s_reassembly_len);
+                if (s_correction_cb) {
+                    s_correction_cb(s_reassembly_buf, s_reassembly_len, src);
+                }
+                s_reassembly_msg_id = 0xFF;  // mark as idle
             }
             break;
         }
@@ -177,28 +228,58 @@ const uint8_t* get_peer_mac()
 // Public API — Sending
 // ---------------------------------------------------------------------------
 
-esp_err_t send_correction(const uint8_t* data, uint8_t len)
+esp_err_t send_correction(const uint8_t* data, size_t len)
 {
     if (!s_peer_known) {
         ESP_LOGE(TAG, "send_correction: no peer known yet");
         return ESP_ERR_INVALID_STATE;
     }
-    if (len > MAX_CORRECTION_LEN) {
-        ESP_LOGE(TAG, "send_correction: len %u exceeds MAX_CORRECTION_LEN %u",
-                 len, MAX_CORRECTION_LEN);
-        return ESP_ERR_INVALID_ARG;
+
+    // Small frame — send as a single CorrectionPacket.
+    if (len <= MAX_CORRECTION_LEN) {
+        CorrectionPacket pkt;
+        pkt.type = PacketType::CORRECTION;
+        pkt.len  = static_cast<uint8_t>(len);
+        memcpy(pkt.data, data, len);
+        const size_t send_len = offsetof(CorrectionPacket, data) + len;
+        return ::esp_now_send(s_peer_mac,
+                              reinterpret_cast<const uint8_t*>(&pkt),
+                              send_len);
     }
 
-    CorrectionPacket pkt;
-    pkt.type = PacketType::CORRECTION;
-    pkt.len  = len;
-    memcpy(pkt.data, data, len);
+    // Large frame — split into FragmentPackets and send one by one.
+    const uint8_t total_frags = static_cast<uint8_t>(
+        (len + MAX_FRAGMENT_DATA - 1) / MAX_FRAGMENT_DATA);
 
-    // Only transmit the header + the actual payload, not the full 248-byte array.
-    const size_t send_len = offsetof(CorrectionPacket, data) + len;
-    return ::esp_now_send(s_peer_mac,
-                          reinterpret_cast<const uint8_t*>(&pkt),
-                          send_len);
+    const uint8_t msg_id = ++s_msg_id;
+    ESP_LOGI(TAG, "Fragmenting %u-byte RTCM frame into %u packets (msg_id=%u)",
+             (unsigned)len, total_frags, msg_id);
+
+    for (uint8_t i = 0; i < total_frags; i++) {
+        const size_t offset    = i * MAX_FRAGMENT_DATA;
+        const size_t chunk_len = (offset + MAX_FRAGMENT_DATA <= len)
+                                 ? MAX_FRAGMENT_DATA
+                                 : (len - offset);
+
+        FragmentPacket pkt;
+        pkt.type        = PacketType::FRAGMENT;
+        pkt.msg_id      = msg_id;
+        pkt.frag_idx    = i;
+        pkt.total_frags = total_frags;
+        pkt.len         = static_cast<uint8_t>(chunk_len);
+        memcpy(pkt.data, data + offset, chunk_len);
+
+        const size_t send_len = offsetof(FragmentPacket, data) + chunk_len;
+        esp_err_t err = ::esp_now_send(s_peer_mac,
+                                       reinterpret_cast<const uint8_t*>(&pkt),
+                                       send_len);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Fragment %u/%u send failed: %s",
+                     i + 1, total_frags, esp_err_to_name(err));
+            return err;
+        }
+    }
+    return ESP_OK;
 }
 
 esp_err_t send_gps_position(const GpsData& position)

@@ -15,19 +15,35 @@ namespace WIFI {
 
 // Every ESP-NOW frame starts with this discriminator byte.
 enum class PacketType : uint8_t {
-    CORRECTION   = 0x01,   // Ground station → Rover  : raw RTCM correction bytes
+    CORRECTION   = 0x01,   // Ground station → Rover  : complete RTCM frame (fits in one packet)
     GPS_POSITION = 0x02,   // Rover           → Ground : parsed GpsData
+    FRAGMENT     = 0x03,   // Ground station → Rover  : one slice of a large RTCM frame
 };
 
 // ESP-NOW hard limit is 250 bytes per frame.
 // CorrectionPacket header = type(1) + len(1) = 2 bytes, leaving 248 for payload.
 static constexpr uint8_t MAX_CORRECTION_LEN = 248;
 
-// Sent by the ground station to the rover carrying raw RTCM correction bytes.
+// Fragment header occupies 5 bytes, leaving 245 bytes for payload data.
+static constexpr uint8_t MAX_FRAGMENT_DATA  = 245;
+
+// Sent by the ground station to the rover carrying raw RTCM correction bytes
+// that fit within a single ESP-NOW frame.
 struct __attribute__((packed)) CorrectionPacket {
     PacketType type;                    // = PacketType::CORRECTION
     uint8_t    len;                     // number of valid bytes in data[]
     uint8_t    data[MAX_CORRECTION_LEN];
+};
+
+// Sent when an RTCM frame is too large for one ESP-NOW packet.
+// The receiver collects all fragments with the same msg_id and reassembles them.
+struct __attribute__((packed)) FragmentPacket {
+    PacketType type;                    // = PacketType::FRAGMENT
+    uint8_t    msg_id;                  // identifies which message these fragments belong to
+    uint8_t    frag_idx;                // index of this fragment (0-based)
+    uint8_t    total_frags;             // total number of fragments for this message
+    uint8_t    len;                     // number of valid bytes in data[]
+    uint8_t    data[MAX_FRAGMENT_DATA];
 };
 
 // Sent by the rover to the ground station carrying the parsed GPS position.
@@ -42,7 +58,7 @@ struct __attribute__((packed)) GpsPacket {
 
 // Called on the Rover when correction data arrives.
 // data/len are the raw RTCM bytes; src_mac is the sender's MAC (6 bytes).
-using CorrectionCallback = void (*)(const uint8_t* data, uint8_t len,
+using CorrectionCallback = void (*)(const uint8_t* data, size_t len,
                                     const uint8_t* src_mac);
 
 // Called on the Ground Station when a GPS position arrives.
@@ -81,8 +97,9 @@ const uint8_t* get_peer_mac();
 // ---------------------------------------------------------------------------
 
 // Send raw RTCM correction bytes to the registered peer (Ground Station → Rover).
-// len must be <= MAX_CORRECTION_LEN (248).
-esp_err_t send_correction(const uint8_t* data, uint8_t len);
+// Frames up to MAX_CORRECTION_LEN are sent in one packet; larger frames are
+// automatically split into FragmentPackets and reassembled on the rover side.
+esp_err_t send_correction(const uint8_t* data, size_t len);
 
 // Send a GPS position to the registered peer (Rover → Ground Station).
 esp_err_t send_gps_position(const GpsData& position);

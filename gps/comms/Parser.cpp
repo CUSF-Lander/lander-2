@@ -99,10 +99,23 @@ void Parser::parse(const uint8_t* data, size_t len) {
     //handling the type of command:
     std::string_view type(tokens[0]);
     if (type == std::string_view("GNGGA")){
-        convertToCart(std::stod(tokens[2]), std::stod(tokens[4]), std::stod(tokens[9]), std::stod(tokens[11]));
-        ESP_LOGI("Parser", "Parsed GNGGA: x=%.2f, y=%.2f, z=%.2f", gps_data.x, gps_data.y, gps_data.z);
+        if (std::stod(tokens[6]) < 1) {
+            ESP_LOGW("Parser", "Invalid GPS fix quality: %s", tokens[6].c_str());
+            return;
+        }
+        else{
+            if (std::stod(tokens[6]) >=4 && std::stod(tokens[6]) <=5){
+                RTK = true;
+            }
+            convertToCart(std::stod(tokens[2]), std::stod(tokens[4]), std::stod(tokens[9]), std::stod(tokens[11]));
+            ESP_LOGI("Parser", "Parsed GNGGA: x=%.2f, y=%.2f, z=%.2f", gps_data.x, gps_data.y, gps_data.z);
+        }
     }
     else {
         return;
     }
+}
+
+const GpsData& Parser::getGpsData(void){
+    return gps_data;
 }

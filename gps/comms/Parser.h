@@ -17,8 +17,10 @@ class Parser {
         std::vector<std::string> tokenize(const uint8_t* data, size_t len);
         void convertToCart(const double& lat,const  double& lon, const double& alt, const double& hae);
         GpsData gps_data;
+        bool RTK = false;
     public:
         void parse(const uint8_t* data, size_t len);
+        const GpsData& getGpsData(void );
 };
 
 #endif // PARSER_H
