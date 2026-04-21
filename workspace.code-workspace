@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "lander"
+		},
+		{
+			"path": "ground-station"
+		}
+	],
+	"settings": {}
+}
