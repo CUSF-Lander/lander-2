@@ -24,8 +24,8 @@ static bool    s_peer_known  = false;
 static uint8_t s_msg_id = 0;    // increments with every fragmented message sent
 
 // Reassembly state — incoming
-// RTCM3 max frame size: 3 header + 1023 payload + 3 CRC = 1029 bytes
-static constexpr size_t REASSEMBLY_BUF_SIZE = 1029;
+// Buffer large enough to hold multiple concatenated RTCM frames read in one UART poll
+static constexpr size_t REASSEMBLY_BUF_SIZE = 4096;
 static uint8_t  s_reassembly_buf[REASSEMBLY_BUF_SIZE];
 static uint8_t  s_reassembly_msg_id   = 0xFF;   // msg_id currently being reassembled
 static uint8_t  s_reassembly_total    = 0;       // expected fragment count
@@ -95,6 +95,10 @@ static void recv_cb(const esp_now_recv_info_t* recv_info,
             // If this belongs to a different message than we were reassembling,
             // start fresh (previous message was lost or never started).
             if (pkt->msg_id != s_reassembly_msg_id) {
+                if (s_reassembly_msg_id != 0xFF && s_reassembly_received < s_reassembly_total) {
+                    ESP_LOGW(TAG, "LOST incomplete msg_id=%u (%u/%u fragments received)",
+                             s_reassembly_msg_id, s_reassembly_received, s_reassembly_total);
+                }
                 s_reassembly_msg_id   = pkt->msg_id;
                 s_reassembly_total    = pkt->total_frags;
                 s_reassembly_received = 0;
@@ -105,7 +109,9 @@ static void recv_cb(const esp_now_recv_info_t* recv_info,
             size_t offset = pkt->frag_idx * MAX_FRAGMENT_DATA;
             if (offset + pkt->len <= REASSEMBLY_BUF_SIZE) {
                 memcpy(s_reassembly_buf + offset, pkt->data, pkt->len);
-                s_reassembly_len = offset + pkt->len;
+                // Track the highest byte written so length is correct regardless of arrival order.
+                size_t end = offset + pkt->len;
+                if (end > s_reassembly_len) s_reassembly_len = end;
                 s_reassembly_received++;
             } else {
                 ESP_LOGW(TAG, "FRAGMENT would overflow reassembly buffer, dropping");

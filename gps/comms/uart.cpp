@@ -12,8 +12,7 @@
 namespace Uart
 {
 
-const int RX_BUF_SIZE = 1024;
-
+const int RX_BUF_SIZE = 2048;
 
 #define UART_NUM UART_NUM_2
 #define TXD_PIN (GPIO_NUM_17)
