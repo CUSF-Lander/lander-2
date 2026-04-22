@@ -84,14 +84,14 @@ void init_2_motors(void* pvParameters)
         }
 
         // Send the throttle % command
-        esp_err_t throttle_result = esc.sendThrottle(throttle_percent);
+        esc.sendThrottle(throttle_percent);
         /*if (throttle_result != ESP_OK) {
             ESP_LOGE(TAG, "Error sending throttle command: %d", throttle_result);
         }*/
         //ESP_LOGI(TAG, "Throttle command sent to first ESC: %d", throttle_result);
 
         // Send the throttle % command to the second ESC
-        esp_err_t throttle_result2 = esc2.sendThrottle(throttle_percent); 
+        esc2.sendThrottle(throttle_percent); 
         /*if (throttle_result2 != ESP_OK) {
             ESP_LOGE(TAG, "Error sending throttle command: %d", throttle_result);
         }*/

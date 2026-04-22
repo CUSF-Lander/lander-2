@@ -5,6 +5,7 @@
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "globalvars.hpp"
+#include "comms/comm.h"
 #include <cstring>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -21,7 +22,7 @@ static std::atomic<uint32_t> send_success_count(0);
 static std::atomic<uint32_t> send_fail_count(0);
 
 //callback function for send status
-void on_data_sent(const esp_now_send_info_t *info, esp_now_send_status_t status) {
+void on_data_sent(const uint8_t* mac_addr, esp_now_send_status_t status) {
     send_pending = false;
     if (status == ESP_NOW_SEND_SUCCESS) {
         send_success_count++;
@@ -31,7 +32,7 @@ void on_data_sent(const esp_now_send_info_t *info, esp_now_send_status_t status)
 }
 
 //callback function for receiving data
-void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
+void esp_now_cmd_handler(const uint8_t *data, size_t len, const uint8_t *src_mac) {
     if (len == sizeof(esp_now_cmd_t)) {
         esp_now_cmd_t *cmd = (esp_now_cmd_t *)data;
         if (cmd->command == 1) { // ESTOP
@@ -47,6 +48,9 @@ void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *data, int
     }
 }
 
+static int64_t last_send_time = 0;
+static constexpr int64_t SEND_TIMEOUT_US = 100000; // 100ms
+
 //Initialise Wi-Fi and ESP-NOW for sending
 void init_espnow_sender() {
     //Initialise NVS
@@ -57,48 +61,15 @@ void init_espnow_sender() {
     }
     ESP_ERROR_CHECK(ret);
 
-    //Initialise Wi-Fi
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    
-    //set Long Range Mode (LR) and Max TX Power (improves range but decreases throughput, need to find balance)
-    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR));
+    ESP_ERROR_CHECK(WIFI::wifi_init());
+    ESP_ERROR_CHECK(WIFI::esp_now_init());
 
-    ESP_ERROR_CHECK(esp_wifi_start());
-    
-    //explicitly set channel 1 to ensure sender/receiver match (must be called after esp_wifi_start)
-    ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
-    
-    //set max tx power (must be called after esp_wifi_start)
-    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(82)); 
-
-    //Initialize ESP-NOW
-    ESP_ERROR_CHECK(esp_now_init());
-    ESP_ERROR_CHECK(esp_now_register_send_cb(on_data_sent));
-    ESP_ERROR_CHECK(esp_now_register_recv_cb(on_data_recv));
-
-    //Add peer (if one doesn't already exist)
-    if (!esp_now_is_peer_exist(receiver_mac)) {
-        esp_now_peer_info_t peer_info = {};
-        memcpy(peer_info.peer_addr, receiver_mac, 6);
-        peer_info.channel = 1; //match the wifi channel set above
-        peer_info.ifidx = WIFI_IF_STA;
-        peer_info.encrypt = false;
-        ESP_ERROR_CHECK(esp_now_add_peer(&peer_info));
-    }
-
-    ESP_LOGI(TAG, "ESP-NOW sender initialized successfully.");
+    WIFI::set_command_callback(esp_now_cmd_handler);
+    WIFI::set_send_callback(on_data_sent);
+    WIFI::add_peer(receiver_mac);
 }
 
 void esp_now_send_data() {
-    static int64_t last_send_time = 0;
-    const int64_t SEND_TIMEOUT_US = 50000; //50ms watchdog
-
     //Skip if previous send is still pending, unless timeout
     if (send_pending) {
         if ((esp_timer_get_time() - last_send_time) > SEND_TIMEOUT_US) {
@@ -113,7 +84,7 @@ void esp_now_send_data() {
     esp_now_data_t data;
 
     //Initialize the entire struct to zero first
-    memset(&data, 0, sizeof(data));
+    memset(&data, 0, sizeof(data)); data.type = 0x04;
     
     data.sequence = ++sequence;
     data.timestamp = (uint32_t)(esp_timer_get_time() / 1000); // ms

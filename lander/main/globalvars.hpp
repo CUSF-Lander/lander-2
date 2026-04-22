@@ -37,6 +37,33 @@ typedef struct {
 
 extern latest_lin_velocity_t latest_velocity;
 
+typedef struct {
+    double x;
+    double y;
+    double z;
+} gps_position_t;
+
+extern gps_position_t latest_gps_position;
+
+// Output of the position controller: desired roll and pitch [rad] for the hover controller
+typedef struct {
+    float roll;   // desired roll  [rad]
+    float pitch;  // desired pitch [rad]
+} u_pos_t;
+
+extern u_pos_t U_pos;
+
+// Output of the hover controller: actuator commands computed from LQR + thrust geometry
+typedef struct {
+    float alpha1;  // gimbal angle 1   [rad]
+    float alpha2;  // gimbal angle 2   [rad]
+    float omega1;  // motor 1 speed    [rad/s]
+    float omega2;  // motor 2 speed    [rad/s]
+    float lambda;  // motor thrust ratio [-]
+} u_hov_t;
+
+extern u_hov_t U_hov;
+
 extern std::atomic<bool> estop_triggered;
 extern std::atomic<bool> servo_testing_mode;
 
