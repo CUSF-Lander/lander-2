@@ -7,5 +7,45 @@
 			"path": "ground-station"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"idf.currentSetup": "C:\\esp\\v5.5.1\\esp-idf"
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "Build Select Project",
+				"type": "shell",
+				"command": "idf.py build",
+				"options": {
+					"cwd": "${input:projectPath}"
+				},
+				"group": {
+					"kind": "build",
+					"isDefault": true
+				},
+				"problemMatcher": [
+					"$gcc"
+				]
+			}
+		],
+		"inputs": [
+			{
+				"id": "projectPath",
+				"type": "pickString",
+				"description": "Which project would you like to build?",
+				"options": [
+					{
+						"label": "Lander",
+						"value": "${workspaceFolder:lander}"
+					},
+					{
+						"label": "Ground Station",
+						"value": "${workspaceFolder:ground-station}"
+					}
+				],
+				"default": "${workspaceFolder:lander}"
+			}
+		]
+	}
 }

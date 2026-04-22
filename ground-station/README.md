@@ -1,58 +1,14 @@
-# ESP32 Lander Ground Station
 
-An ESP-IDF project that turns an ESP32 into a ground station receiver for a model rocket/lander. It listens for telemetry data from the lander via the ESP-NOW protocol and pipes it out so we can monitor things like orientation, acceleration, and position in real-time. Made by Krystian Filipek.
+# Cambridge University SpaceFlight - Propulsive Lander - Flight Computer Software
 
-## Features
+Flight computer software developed on top of ESP-IDF for a liquid fuelled, propulsively landed rocket hopper that flies to 100m and back, to compete in The Lander Challenge.
 
-- **ESP-NOW Reception**: Uses ESP-NOW to listen for high-speed, structural telemetry data without needing a WiFi router.
-- **Python Telemetry Dashboard**: Includes a custom GUI (gui.py) to visualize the lander's 3D orientation and real-time positional drift.
-- **Hardware & Software E-STOP**: Ability to remotely command the lander to shut down operations or recalibrate its IMU on the fly.
-- **Data Logging**: Saves live flight data straight into auto-generated CSV files for post-flight analysis.
+This version of the software is to be used by a small scale single rotor (with 2 counter-rotating propellers) drone to demonstrate Thrust Vector Control and relevant state estimation and  flight control algorithms. 
 
-## Technical Implementation
+The current plan is to implement a Linear Quadratic Regulator for Full State Feedback. 
 
-The project relies on ESP-IDF for the low-level embedded receiver and Python for the 3D dashboard. 
+### Current Software, Control Systems, Mechanical, and Electronics Sub-teams:
+![IMG_8239](https://github.com/user-attachments/assets/0ef6a085-4057-411b-95f5-9252d37085a4)
 
-| Component | Detail |
-|---|---|
-| **Microcontroller** | ESP32 |
-| **Framework** | ESP-IDF (v5.5.1) |
-| **Language** | C++ & Python |
-| **Protocol** | ESP-NOW (2.4 GHz) |
-| **UI Framework** | Tkinter & Matplotlib |
-
-## Getting Started
-
-### Prerequisites
-
-- An ESP32 development board.
-- ESP-IDF v5.5.1 installed and in your PATH.
-- Python 3.x with a few dependencies (matplotlib, 
-umpy, 	tkbootstrap, pyserial).
-
-### Build and Run
-
-1.  **Flash the Ground Station**:
-    `sh
-    idf.py build
-    idf.py flash
-    `
-
-2.  **Launch the Dashboard**:
-    Make sure your ESP32 is plugged in, then spin up the Python GUI to visualize the data:
-    `sh
-    python gui.py
-    `
-
-## Why I made this
-
-I built this ground station to:
-- Practice handling raw sensor telemetry (Euler angles, spatial position, pressure) over a custom wireless protocol.
-- Integrate embedded C code with a Python desktop application over Serial.
-- Needed a dashboard for the CUSF Lander project. 
-
-<div align="center">
-
-Developed by [kfilipekk](https://github.com/kfilipekk)
-
-</div>
+# Setup Guide
+1. Clone the repository by `git clone https://github.com/CUSF-Lander/lander-2.git --recurse-submodules`
