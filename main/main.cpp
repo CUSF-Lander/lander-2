@@ -150,10 +150,47 @@ void state_estimation(void *pvParameters)
 
     // -------------------------------------------------------------------------
     // Kf_nogps (18×10) and Kf_gps (18×13) — fixed Kalman gains, row-major
-    // PLACEHOLDER: fill in tuned values before use.
     // -------------------------------------------------------------------------
-    static const float Kf_nogps[18 * 10] = {0};
-    static const float Kf_gps[18 * 13]   = {0};
+   static const float Kf_nogps[18 * 10] = {
+     0.0f,     0.0076f,  0.0f,     0.0003f, 0.0f,     0.0f,     0.0f,    -0.0002f, 0.0f,     0.0f,
+    -0.0076f,  0.0f,     0.0f,     0.0f,    0.0003f,  0.0f,     0.0002f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0159f,
+     0.0076f,  0.0f,     0.0f,     0.0f,   -0.0002f,  0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0076f,  0.0f,     0.0002f, 0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,
+     0.0f,     0.0f,     0.0087f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,
+     0.0f,     0.0078f,  0.0f,     0.0003f, 0.0f,     0.0f,     0.0f,    -0.0001f,  0.0f,     0.0f,
+    -0.0078f,  0.0f,     0.0f,     0.0f,    0.0003f,  0.0f,     0.0001f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0129f,
+     0.0060f,  0.0f,     0.0f,     0.0f,   -0.0001f,  0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0060f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,
+     0.0f,     0.0f,     0.0060f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,
+     0.0f,     0.0080f,  0.0f,     0.8911f, 0.0f,     0.0f,     0.0f,     0.0045f,  0.0f,     0.0f,
+    -0.0080f,  0.0f,     0.0f,     0.0f,    0.8911f,  0.0f,    -0.0045f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.8909f,  0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f
+};
+ static const float Kf_gps[18 * 13] = {
+     0.0007f,  0.0f,     0.0f,     0.0000f, 0.0f,     0.0f,     0.0f,    -0.0000f, 0.0f,     0.0f,     0.0357f, 0.0f,     0.0f,
+    -0.0007f,  0.0f,     0.0f,     0.0f,    0.0000f,  0.0f,     0.0000f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0357f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0014f, 0.0f,     0.0f,    0.0345f,
+     0.0076f,  0.0f,     0.0f,     0.0f,   -0.0002f,  0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,     0.0f,   -0.0010f, 0.0f,
+     0.0f,     0.0076f,  0.0f,     0.0002f, 0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,     0.0010f, 0.0f,     0.0f,
+     0.0f,     0.0f,     0.0087f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0032f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,    -0.0000f,  0.0f,     0.0f,     0.0651f, 0.0f,     0.0f,
+    -0.0032f,  0.0f,     0.0f,     0.0f,    0.0001f,  0.0f,     0.0000f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0651f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0025f, 0.0f,     0.0f,    0.0633f,
+     0.0060f,  0.0f,     0.0f,     0.0f,   -0.0001f,  0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0000f, 0.0f,
+     0.0f,     0.0060f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,    -0.0000f, 0.0f,     0.0f,
+     0.0f,     0.0f,     0.0060f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0080f,  0.0f,     0.8911f, 0.0f,     0.0f,     0.0f,     0.0045f,  0.0f,     0.0f,     0.0011f, 0.0f,     0.0f,
+    -0.0080f,  0.0f,     0.0f,     0.0f,    0.8911f,  0.0f,    -0.0045f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0011f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.8909f,  0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f
+};
 
     // GPS freshness tracking
     static float last_gps[3] = {0.0f, 0.0f, 0.0f};
@@ -312,7 +349,10 @@ void position_controller(void *pvParameters)
     // K_pos (2×6) — LQR gain matrix, row-major
     // output = K_pos * [x_err, y_err, vx_err, vy_err, int_x_err, int_y_err]'
     // PLACEHOLDER: fill in tuned values before use.
-    static const float K_pos[2 * 6] = {0};
+    static const float K_pos[2 * 6] = {
+     0.0f,   -0.1002f,  0.0f,   -0.1011f, -0.0f,   -0.0002f,
+     0.1002f, 0.0f,     0.1011f, 0.0f,     0.0002f, -0.0f
+};
 
     // SP_pos (6×1) — position setpoint; all zeros = hover at origin
     static const float SP_pos[6] = {0, 0, 0, 0, 0, 0};
@@ -429,7 +469,12 @@ void hover_controller(void *pvParameters)
     // K_hov (4×9) — LQR gain matrix, row-major
     // lqr_out = K_hov * [roll_err, pitch_err, yaw_err, gx_err, gy_err, gz_err, z_err, vz_err, int_z_err]'
     // PLACEHOLDER: fill in tuned values before use.
-    static const float K_hov[4 * 9] = {0};
+    static const float K_hov[4 * 9] = {
+     0.0f,     0.0f,     0.0f,   -17.3205f, -0.0f,    -0.0f,    -6.6814f, -0.0f,     0.0f,
+     0.0f,     0.0f,    17.3205f,  0.0f,     0.0f,     6.6814f,  0.0f,     0.0f,     0.0f,
+    11.0254f,  5.2077f, -0.0f,    -0.0f,     0.6235f, -0.0f,     0.0f,     1.9492f,  6.9881f,
+    -0.0262f, -0.0117f,  0.0f,    -0.0f,     0.0625f, -0.0f,    -0.0f,     0.1946f, -0.0167f
+};
 
     // SP_hover (9×1) — hover setpoint; all zeros (level attitude, hold position)
     // SP_hover[0] and [1] are augmented by U_pos each iteration.
