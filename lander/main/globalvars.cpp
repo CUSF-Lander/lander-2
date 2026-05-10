@@ -24,3 +24,4 @@ double pressure;
 double altitude;
 std::atomic<bool> estop_triggered{true};
 std::atomic<bool> servo_testing_mode{true};
+std::atomic<int64_t> last_gs_msg_time{0};

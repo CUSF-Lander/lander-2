@@ -256,6 +256,18 @@ void esp_now_send_zero_imu(void)
     }
 }
 
+void esp_now_send_heartbeat(void)
+{
+    if (!lander_mac_known) {
+        return; // Suppress log to avoid spamming
+    }
+    
+    esp_now_cmd_t cmd; cmd.type = 0x05;
+    cmd.command = 3; // HEARTBEAT
+    
+    esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
+}
+
 #include <sys/select.h>
 #include <fcntl.h>
 
@@ -307,6 +319,14 @@ static void sw_estop_task(void *pvParameter)
     }
 }
 
+static void heartbeat_task(void *pvParameter)
+{
+    while (1) {
+        esp_now_send_heartbeat();
+        vTaskDelay(pdMS_TO_TICKS(100)); // 10Hz heartbeat
+    }
+}
+
 void init_estop_task(void)
 {
     if (!uart_is_driver_installed(UART_NUM_0)) {
@@ -316,6 +336,7 @@ void init_estop_task(void)
 
     xTaskCreate(hw_estop_task, "hw_estop_task", 2048, NULL, 5, NULL);
     xTaskCreate(sw_estop_task, "sw_estop_task", 4096, NULL, 5, NULL);
+    xTaskCreate(heartbeat_task, "heartbeat_task", 2048, NULL, 5, NULL);
 }
 
 esp_err_t esp_now_receiver_stats_reset(void)

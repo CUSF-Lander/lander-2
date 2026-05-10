@@ -1,5 +1,6 @@
 #include "motor_init.hpp"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "globalvars.hpp"
@@ -75,6 +76,14 @@ void init_2_motors(void* pvParameters)
     // Main control loop - send the 5% throttle command continuously
     ESP_LOGI(TAG, "Entering control loop with 5%% throttle");
     while (true) {
+        // Automatically trigger ESTOP if no messages from GS in 500ms
+        if (last_gs_msg_time > 0 && (esp_timer_get_time() - last_gs_msg_time) > 500000) {
+            if (!estop_triggered) {
+                ESP_LOGE(TAG, "Ground station connection lost (500ms timeout)! Triggering ESTOP.");
+                estop_triggered = true;
+            }
+        }
+
         if (estop_triggered) {
             //send 0 throttle to stop motors
             esc.sendThrottle(0);

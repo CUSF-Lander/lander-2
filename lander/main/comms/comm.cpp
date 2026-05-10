@@ -3,6 +3,8 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "../globalvars.hpp"
 #include <string.h>
 #include <stddef.h>       // offsetof
 
@@ -58,6 +60,9 @@ static void recv_cb(const esp_now_recv_info_t* recv_info,
                  s_peer_mac[0], s_peer_mac[1], s_peer_mac[2],
                  s_peer_mac[3], s_peer_mac[4], s_peer_mac[5]);
     }
+
+    // Update connection timestamp
+    last_gs_msg_time = esp_timer_get_time();
 
     auto type = static_cast<PacketType>(data[0]);
 

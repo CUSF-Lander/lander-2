@@ -38,7 +38,10 @@ void esp_now_send_estop(void);
  * @brief Send ZERO_IMU command to the lander
  */
 void esp_now_send_zero_imu(void);
-
+/**
+ * @brief Send periodic HEARTBEAT command to the lander
+ */
+void esp_now_send_heartbeat(void);
 /**
  * @brief Initialise the ESTOP task (HW button and Serial input)
  */
