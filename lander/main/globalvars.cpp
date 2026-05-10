@@ -22,6 +22,6 @@ int32_t euler_counter = 0; // Initialize counter to 0
 double temperature;
 double pressure;
 double altitude;
-std::atomic<bool> estop_triggered{true};
-std::atomic<bool> servo_testing_mode{true};
+std::atomic<bool> estop_triggered{false};
+std::atomic<bool> servo_testing_mode{false};
 std::atomic<int64_t> last_gs_msg_time{0};
