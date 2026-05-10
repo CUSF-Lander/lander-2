@@ -16,8 +16,8 @@ const int RX_BUF_SIZE = 1024;
 
 
 #define UART_NUM UART_NUM_2
-#define TXD_PIN (GPIO_NUM_17)
-#define RXD_PIN (GPIO_NUM_16)
+#define TXD_PIN (GPIO_NUM_15)
+#define RXD_PIN (GPIO_NUM_35)
 //com2 specified as output from um982
 
 void init(void)
