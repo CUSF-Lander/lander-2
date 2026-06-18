@@ -2,7 +2,6 @@
 #define MOTOR_INIT_HPP
 
 #include "driver/gpio.h"
-#include "driver/rmt.h"
 
 // Function to initialize the motor
 void init_2_motors(void* pvParameters);

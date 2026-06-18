@@ -25,24 +25,23 @@ void init_2_motors(void* pvParameters)
     //pin configurations: (changed motor2 to 14 as 18 is a flash pin on PICO-V3-02)
     gpio_num_t dshot_gpio = GPIO_NUM_4;
     gpio_num_t dshot_gpio2 = GPIO_NUM_14;
-    rmt_channel_t rmt_channel = RMT_CHANNEL_0;
-    rmt_channel_t rmt_channel2 = RMT_CHANNEL_1;
 
     ESP_LOGI(TAG, "Initializing DShot RMT for both motors");
-    
+
     // Create a DShot ESC instance
     DShotRMT esc;
     DShotRMT esc2;
-    
-    // Install the DShot driver on the specified GPIO pin and RMT channel
-    esp_err_t result = esc.install(dshot_gpio, rmt_channel);
+
+    // Install the DShot driver on the specified GPIO pin. The new RMT driver
+    // allocates an RMT channel automatically, so no channel number is passed.
+    esp_err_t result = esc.install(dshot_gpio);
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed to install DShot driver: %d", result);
         //return;
     }
 
 
-    esp_err_t result2 = esc2.install(dshot_gpio2, rmt_channel2);
+    esp_err_t result2 = esc2.install(dshot_gpio2);
     if (result2 != ESP_OK) {
         ESP_LOGE(TAG, "Failed to install DShot driver: %d", result2);
         //return;
