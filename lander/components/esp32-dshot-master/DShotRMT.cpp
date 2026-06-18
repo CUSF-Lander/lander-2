@@ -53,6 +53,10 @@ enum dshot_cmd_t
 #define DSHOT_PAUSE (DSHOT_TICKS_PER_BIT * 200)
 // !DSHOT Timings
 
+//RMT resolution matching the legacy clk_div of 7 on the 80 MHz APB clock:
+//80 MHz / 7 = 11.428571 MHz (one tick ~= 87.5 ns).
+#define DSHOT_RMT_RESOLUTION_HZ 11428571
+
 #define RMT_CMD_SIZE (sizeof(_dshotCmd) / sizeof(_dshotCmd[0]))
 
 #define DSHOT_THROTTLE_MIN 48
@@ -74,34 +78,43 @@ DShotRMT::DShotRMT()
 
 DShotRMT::~DShotRMT()
 {
-	// TODO write destructor
+	uninstall();
 }
 
-esp_err_t DShotRMT::install(gpio_num_t gpio, rmt_channel_t rmtChannel)
+esp_err_t DShotRMT::install(gpio_num_t gpio)
 {
-	_rmtChannel = rmtChannel;
+	rmt_tx_channel_config_t tx_chan_config = {};
+	tx_chan_config.gpio_num = gpio;
+	tx_chan_config.clk_src = RMT_CLK_SRC_DEFAULT;
+	tx_chan_config.resolution_hz = DSHOT_RMT_RESOLUTION_HZ;
+	tx_chan_config.mem_block_symbols = 64;
+	tx_chan_config.trans_queue_depth = 4;
+	tx_chan_config.flags.invert_out = false;
+	tx_chan_config.flags.with_dma = false;
 
-	rmt_config_t config;
+	DSHOT_ERROR_CHECK(rmt_new_tx_channel(&tx_chan_config, &_rmtChannel));
 
-	config.channel = rmtChannel;
-	config.rmt_mode = RMT_MODE_TX;
-	config.gpio_num = gpio;
-	config.mem_block_num = 1;
-	config.clk_div = 7;
+	// The DShot frame is built directly as raw RMT symbols, so a copy encoder
+	// (which transmits the symbol buffer verbatim) is all that is needed.
+	rmt_copy_encoder_config_t copy_encoder_config = {};
+	DSHOT_ERROR_CHECK(rmt_new_copy_encoder(&copy_encoder_config, &_encoder));
 
-	config.tx_config.loop_en = false;
-	config.tx_config.carrier_en = false;
-	config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-	config.tx_config.idle_output_en = true;
-
-	DSHOT_ERROR_CHECK(rmt_config(&config));
-
-	return rmt_driver_install(rmtChannel, 0, 0);
+	return rmt_enable(_rmtChannel);
 }
 
 esp_err_t DShotRMT::uninstall()
 {
-	// TODO implement uninstall
+	if (_rmtChannel != nullptr)
+	{
+		rmt_disable(_rmtChannel);
+		rmt_del_channel(_rmtChannel);
+		_rmtChannel = nullptr;
+	}
+	if (_encoder != nullptr)
+	{
+		rmt_del_encoder(_encoder);
+		_encoder = nullptr;
+	}
 	return ESP_OK;
 }
 
@@ -133,7 +146,7 @@ esp_err_t DShotRMT::sendThrottle(uint16_t throttle)
 
 esp_err_t DShotRMT::setReversed(bool reversed)
 {
-	DSHOT_ERROR_CHECK(rmt_wait_tx_done(_rmtChannel, 1));
+	DSHOT_ERROR_CHECK(rmt_tx_wait_all_done(_rmtChannel, 100));
 	DSHOT_ERROR_CHECK(repeatPacketTicks({DSHOT_THROTTLE_MIN, 0}, 200 / portTICK_PERIOD_MS));
 	DSHOT_ERROR_CHECK(repeatPacket(
 			{reversed ? DIGITAL_CMD_SPIN_DIRECTION_REVERSED : DIGITAL_CMD_SPIN_DIRECTION_NORMAL, 1},
@@ -186,14 +199,24 @@ uint8_t DShotRMT::checksum(uint16_t data)
 
 esp_err_t DShotRMT::writeData(uint16_t data, bool wait)
 {
-    TickType_t tx_wait_ticks = pdMS_TO_TICKS(100);
-    DSHOT_ERROR_CHECK(rmt_wait_tx_done(_rmtChannel, tx_wait_ticks));
+	// Make sure the previous frame finished before overwriting the buffer.
+	DSHOT_ERROR_CHECK(rmt_tx_wait_all_done(_rmtChannel, 100));
 
 	setData(data);
 
-	return rmt_write_items(_rmtChannel,
-						   _dshotCmd, RMT_CMD_SIZE,
-						   wait);
+	rmt_transmit_config_t tx_config = {};
+	tx_config.loop_count = 0;
+
+	// The copy encoder consumes the payload as raw rmt_symbol_word_t data, so
+	// the size is given in bytes.
+	DSHOT_ERROR_CHECK(rmt_transmit(_rmtChannel, _encoder,
+								   _dshotCmd, sizeof(_dshotCmd),
+								   &tx_config));
+
+	if (wait)
+		DSHOT_ERROR_CHECK(rmt_tx_wait_all_done(_rmtChannel, 100));
+
+	return ESP_OK;
 }
 
 esp_err_t DShotRMT::writePacket(dshot_packet_t packet, bool wait)
@@ -220,7 +243,7 @@ esp_err_t DShotRMT::repeatPacket(dshot_packet_t packet, int n)
 
 esp_err_t DShotRMT::repeatPacketTicks(dshot_packet_t packet, TickType_t ticks)
 {
-	DSHOT_ERROR_CHECK(rmt_wait_tx_done(_rmtChannel, ticks));
+	DSHOT_ERROR_CHECK(rmt_tx_wait_all_done(_rmtChannel, pdTICKS_TO_MS(ticks)));
 
 	TickType_t repeatStop = xTaskGetTickCount() + ticks;
 	while (xTaskGetTickCount() < repeatStop)
