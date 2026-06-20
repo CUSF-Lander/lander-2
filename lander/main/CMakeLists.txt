@@ -12,4 +12,5 @@ idf_component_register(SRCS "main.cpp"
                          "comms/uart.cpp"
                          "comms/Parser.cpp"
                     INCLUDE_DIRS "i2c" "comms"
-                    REQUIRES esp32_BNO08x esp_wifi esp32-dshot-master nvs_flash esp-dsp)
+                    REQUIRES esp32_BNO08x esp_wifi esp32-dshot-master nvs_flash esp-dsp
+                             esp_driver_gpio esp_driver_uart esp_timer driver)

@@ -1,3 +1,4 @@
 idf_component_register(SRCS "main.cpp" "esp_now_receiver.cpp"
                     INCLUDE_DIRS "." "../../lander/main"
-                    REQUIRES esp_wifi esp_event nvs_flash driver esp_timer)
+                    REQUIRES esp_wifi esp_event nvs_flash esp_timer
+                             esp_driver_gpio esp_driver_uart vfs)
