@@ -30,7 +30,7 @@ void init(void)
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .rx_flow_ctrl_thresh = 0,
         .source_clk = UART_SCLK_DEFAULT,
-        .flags = 0
+        .flags = {} //v6: flags is now a bitfield struct, not a scalar
     };
     // We won't use a buffer for sending data.
     uart_driver_install(UART_NUM, RX_BUF_SIZE * 2, 0, 0, NULL, 0);

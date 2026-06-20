@@ -8,8 +8,9 @@ static const char *TAG = "I2C_SETUP";
 esp_err_t i2c_master_init() {
   i2c_config_t conf = {};
   conf.mode = I2C_MODE_MASTER;
-  conf.sda_io_num = I2C_MASTER_SDA_IO;
-  conf.scl_io_num = I2C_MASTER_SCL_IO;
+//v6 changed the legacy i2c_config_t pin fields from int to gpio_num_t.
+  conf.sda_io_num = (gpio_num_t)I2C_MASTER_SDA_IO;
+  conf.scl_io_num = (gpio_num_t)I2C_MASTER_SCL_IO;
   conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
   conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
   conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
