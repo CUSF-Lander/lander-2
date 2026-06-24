@@ -1,0 +1,10 @@
+# Project defaults. sdkconfig itself is gitignored/regenerated, so persistent
+# configuration belongs here.
+
+# Target chip
+CONFIG_IDF_TARGET="esp32"
+
+# Use the custom partition table (2 MB app). The ESP-IDF v6 image is larger
+# than v5 and overflows the default single-app (~1 MB) partition.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
