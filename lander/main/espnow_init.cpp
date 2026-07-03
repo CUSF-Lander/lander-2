@@ -35,9 +35,12 @@ void on_data_sent(const uint8_t* mac_addr, esp_now_send_status_t status) {
 void esp_now_cmd_handler(const uint8_t *data, size_t len, const uint8_t *src_mac) {
     if (len == sizeof(esp_now_cmd_t)) {
         esp_now_cmd_t *cmd = (esp_now_cmd_t *)data;
-        if (cmd->command == 1) { // ESTOP
+        if (cmd->command == 1) { //ESTOP
             ESP_LOGW(TAG, "ESTOP COMMAND RECEIVED!");
             estop_triggered = true;
+        } else if (cmd->command == 4) { //ARM: clear ESTOP so the motors may spin
+            ESP_LOGW(TAG, "ARM COMMAND RECEIVED!");
+            estop_triggered = false;
         } else if (cmd->command == 2) { //ZERO_IMU
             ESP_LOGW(TAG, "ZERO IMU COMMAND RECEIVED!");
             portENTER_CRITICAL(&global_spinlock);

@@ -201,7 +201,11 @@ class GroundStationUI:
         self.estop_btn = tb.Button(commands_frame, text="HARD SOFTWARE ESTOP", bootstyle=DANGER,
                                    command=self.send_estop)
         self.estop_btn.pack(side=LEFT, fill=X, expand=True, ipady=15, padx=(0, 10))
-        
+
+        self.arm_btn = tb.Button(commands_frame, text="ARM MOTORS", bootstyle=WARNING,
+                                 command=self.send_arm)
+        self.arm_btn.pack(side=LEFT, fill=X, expand=True, ipady=15, padx=(0, 10))
+
         self.zero_imu_btn = tb.Button(commands_frame, text="ZERO IMU (CALIBRATE)", bootstyle=PRIMARY,
                                       command=self.send_zero_imu)
         self.zero_imu_btn.pack(side=RIGHT, fill=X, expand=True, ipady=15, padx=(10, 0))
@@ -374,6 +378,20 @@ class GroundStationUI:
                 self.lbl_estop_status.config(text="ESTOP System: TRIGGERED!", bootstyle=DANGER)
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to send ESTOP: {e}")
+        else:
+            messagebox.showwarning("Warning", "Not connected to serial port", parent=self.root)
+
+    def send_arm(self):
+        if self.serial_port and self.serial_port.is_open:
+            if not messagebox.askyesno("Confirm ARM",
+                                       "Arming clears ESTOP and allows the motors to spin. Continue?",
+                                       parent=self.root):
+                return
+            try:
+                self.serial_port.write(b"ARM\n")
+                self.lbl_estop_status.config(text="ESTOP System: ARMED", bootstyle=WARNING)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send ARM: {e}")
         else:
             messagebox.showwarning("Warning", "Not connected to serial port", parent=self.root)
 

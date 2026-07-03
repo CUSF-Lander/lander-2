@@ -39,6 +39,10 @@ void esp_now_send_estop(void);
  */
 void esp_now_send_zero_imu(void);
 /**
+ * @brief Send ARM command to the lander (clears ESTOP so the motors may spin)
+ */
+void esp_now_send_arm(void);
+/**
  * @brief Send periodic HEARTBEAT command to the lander
  */
 void esp_now_send_heartbeat(void);

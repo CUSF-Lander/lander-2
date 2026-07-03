@@ -256,6 +256,28 @@ void esp_now_send_zero_imu(void)
     }
 }
 
+void esp_now_send_arm(void)
+{
+    if (!lander_mac_known) {
+        ESP_LOGE(TAG, "Cannot send ARM: Lander MAC unknown");
+        return;
+    }
+
+    esp_now_cmd_t cmd; cmd.type = 0x05;
+    cmd.command = 4;
+
+    esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
+    if (result == ESP_OK) {
+        ESP_LOGI(TAG, "ARM command sent successfully");
+        printf("{\"type\":\"arm_status\",\"status\":\"sent\"}\n");
+        fflush(stdout);
+    } else {
+        ESP_LOGE(TAG, "Error sending ARM command: %s", esp_err_to_name(result));
+        printf("{\"type\":\"arm_status\",\"status\":\"error\"}\n");
+        fflush(stdout);
+    }
+}
+
 void esp_now_send_heartbeat(void)
 {
     if (!lander_mac_known) {
@@ -308,6 +330,9 @@ static void sw_estop_task(void *pvParameter)
                 } else if (strcmp(line, "ZERO_IMU") == 0) {
                     ESP_LOGW(TAG, "SW ZERO IMU TRIGGERED!");
                     esp_now_send_zero_imu();
+                } else if (strcmp(line, "ARM") == 0) {
+                    ESP_LOGW(TAG, "SW ARM TRIGGERED!");
+                    esp_now_send_arm();
                 }
                 pos = 0;
             } else if (pos < sizeof(line) - 1) {
