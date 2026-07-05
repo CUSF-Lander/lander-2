@@ -1,7 +1,7 @@
 # Lander
 
 Firmware for the lander and its ground station, targeting the **ESP32** on
-**ESP-IDF v6.0.1**. This repo is a VS Code multi-root workspace with two
+**ESP-IDF v6.0.2**. This repo is a VS Code multi-root workspace with two
 independent ESP-IDF projects:
 
 - [`lander/`](lander/) — flight controller (IMU, Kalman filter, DShot motors, ESP-NOW telemetry)
@@ -18,7 +18,7 @@ independent ESP-IDF projects:
    git submodule update --init --recursive
    ```
 
-2. **Install ESP-IDF v6.0.1.** Use the
+2. **Install ESP-IDF v6.0.2.** Use the
    [ESP-IDF Installation Manager (EIM)](https://dl.espressif.com/dl/esp-idf/)
    or the VS Code ESP-IDF extension's "Configure" flow. The default install
    location is `~/.espressif` (`%USERPROFILE%\.espressif` on Windows).
@@ -43,7 +43,7 @@ Ctrl+Shift+B → "Build Select Project" → Lander or Ground Station
 
 **Via CLI:**
 ```bash
-source ~/.espressif/tools/activate_idf_v6.0.1.sh
+source ~/.espressif/tools/activate_idf_v6.0.2.sh
 idf.py -C lander build                    # or: -C ground-station
 ```
 
@@ -53,11 +53,11 @@ idf.py -C lander build                    # or: -C ground-station
 ```bash
 Cmd+Shift+B → "Build Select Project" → Lander or Ground Station
 ```
-(The task automatically sources `~/.espressif/tools/activate_idf_v6.0.1.sh`.)
+(The task automatically sources `~/.espressif/tools/activate_idf_v6.0.2.sh`.)
 
 **Via CLI:**
 ```bash
-source ~/.espressif/tools/activate_idf_v6.0.1.sh
+source ~/.espressif/tools/activate_idf_v6.0.2.sh
 idf.py -C lander build
 ```
 
@@ -71,7 +71,7 @@ idf.py -C lander build
 
 **Via CLI (PowerShell):**
 ```powershell
-# Activate ESP-IDF (installed via EIM or Windows installer)
+# Activate ESP-IDF v6.0.2 (installed via EIM or Windows installer)
 & "${env:USERPROFILE}\.espressif\tools\idf-cmd-tools\cmdline_tools\bin\idf.cmd" -C lander build
 ```
 
