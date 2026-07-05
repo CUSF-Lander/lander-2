@@ -13,10 +13,14 @@
 #include "motor_init.hpp"
 #include "i2c/bmp390.hpp"
 #include "espnow_init.hpp"
+#include "config.hpp"
 #include "comms/comm.h"
 #include "comms/uart.h"
+#include "esp_timer.h"
+#include "nvs_flash.h"
+#include "driver/i2c.h"
 
-static const constexpr char* TAG = "Main";
+static const char* TAG = "Main";
 
 // Callback for GPS RTK corrections
 void on_correction_received(const uint8_t* data, size_t len, const uint8_t* src_mac) {
@@ -534,9 +538,8 @@ void hover_controller(void *pvParameters)
 void esp_now_task(void *pvParameters)
 {
     while(1) {
-        if (!estop_triggered) {
-            esp_now_send_data();
-        }
+        // Send telemetry regardless of ESTOP status so the UI can show state
+        esp_now_send_data();
         vTaskDelay(pdMS_TO_TICKS(10)); //send every 10ms
     }
 }
@@ -663,7 +666,15 @@ void servo_test_via_serial_blocking()
 
 extern "C" void app_main(void)
 {
-    //Initialise I2C with error checking
+    //enable power to the STEMMA QT connector (I2C power) early
+    ESP_LOGI(TAG, "Enabling STEMMA QT power (GPIO 2)...");
+    gpio_reset_pin(GPIO_NUM_2);
+    gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_2, 1);
+    ESP_LOGI(TAG, "STEMMA QT power enabled. Waiting 1000ms for sensors to stabilize...");
+    vTaskDelay(pdMS_TO_TICKS(1000)); 
+
+    //initialise I2C with error checking
     esp_err_t i2c_result = i2c_master_init();
     if (i2c_result == ESP_OK) {
         ESP_LOGI(TAG, "I2C initialized successfully");
@@ -695,6 +706,7 @@ extern "C" void app_main(void)
 
     ESP_LOGI(TAG, "Waiting for IMU power-up...");
     vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_LOGI(TAG, "Calling imu_init()...");
     imu_init();
 
     // Create the vector logging task with higher stack

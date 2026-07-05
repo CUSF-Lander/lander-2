@@ -10,9 +10,11 @@ static const constexpr char* TAG = "IMU_INIT";
 
 void imu_init()
 {   
+    ESP_LOGI(TAG, "imu_init: Instantiating BNO08x object...");
+    vTaskDelay(pdMS_TO_TICKS(100)); // Short delay before constructor
     static BNO08x imu;
 
-    ESP_LOGI(TAG, "Starting IMU initialisation...");
+    ESP_LOGI(TAG, "imu_init: Starting IMU initialisation...");
     
     //try initialisation with retries for ESP-IDF 5.5.1 compatibility
     const int max_attempts = 3;

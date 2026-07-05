@@ -125,11 +125,6 @@ esp_err_t pca9685_set_servo_angle(uint8_t servo_num, float angle) {
 }
 
 esp_err_t pca9685_init(){
-    // Enable power to the STEMMA QT connector (I2C power)
-    gpio_reset_pin(GPIO_NUM_2);
-    gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
-    gpio_set_level(GPIO_NUM_2, 1);
-
     esp_err_t err;
 
     // // DO NOT TOUCH THIS - this is setup done by arduino pca9685 library that isnt done in espidf
