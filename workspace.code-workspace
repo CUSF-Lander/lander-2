@@ -8,7 +8,10 @@
 		}
 	],
 	"settings": {
-		"idf.currentSetup": "C:\\esp\\v5.5.1\\esp-idf"
+		"//": "ESP-IDF projects are configured/built by the ESP-IDF extension, not the Microsoft CMake Tools extension. Stop CMake Tools from auto-configuring (it uses the host compiler and a bad IDF_PATH, which poisons build/).",
+		"cmake.configureOnOpen": false,
+		"cmake.configureOnEdit": false,
+		"cmake.automaticReconfigure": false
 	},
 	"tasks": {
 		"version": "2.0.0",
@@ -16,9 +19,12 @@
 			{
 				"label": "Build Select Project",
 				"type": "shell",
-				"command": "idf.py build",
-				"options": {
-					"cwd": "${input:projectPath}"
+				"command": "idf.py -C ${input:projectPath} build",
+				"linux": {
+					"command": "source ${userHome}/.espressif/tools/activate_idf_v6.0.1.sh && idf.py -C ${input:projectPath} build"
+				},
+				"osx": {
+					"command": "source ${userHome}/.espressif/tools/activate_idf_v6.0.1.sh && idf.py -C ${input:projectPath} build"
 				},
 				"group": {
 					"kind": "build",

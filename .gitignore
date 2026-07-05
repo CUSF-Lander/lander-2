@@ -1,0 +1,7 @@
+# VS Code per-machine settings.
+# The ESP-IDF extension writes machine-specific values into .vscode/settings.json
+# (idf.currentSetup, idf.port, absolute toolchain/clangd paths). Those must not be
+# committed - they break other contributors' machines. Keep them local instead.
+# Portable, project-level VS Code config lives in workspace.code-workspace and
+# .vscode/extensions.json, which ARE tracked.
+**/.vscode/settings.json
