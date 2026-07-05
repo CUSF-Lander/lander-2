@@ -7,9 +7,6 @@
 			"path": "ground-station"
 		}
 	],
-	"settings": {
-		"idf.currentSetup": "C:\\esp\\v5.5.1\\esp-idf"
-	},
 	"tasks": {
 		"version": "2.0.0",
 		"tasks": [

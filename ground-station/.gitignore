@@ -3,4 +3,6 @@ telemetry_log_*.csv
 __pycache__/
 *.pyc
 sdkconfig.old
+.vscode/
+workspace.local.code-workspace
 
