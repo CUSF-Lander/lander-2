@@ -663,6 +663,25 @@ void servo_test_via_serial_blocking()
 
 extern "C" void app_main(void)
 {
+#if MOTOR_WIRING_TEST_MODE
+    ESP_LOGW(TAG, "MOTOR_WIRING_TEST_MODE enabled: starting only constant-throttle motor wiring test");
+    ESP_LOGW(TAG, "IMU, GPS, ESP-NOW, BMP390, and control tasks are bypassed");
+
+    estop_triggered = false;
+    last_gs_msg_time = 0;
+
+    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "motor_test", 4096, NULL, 3, NULL, APP_CPU_NUM);
+    if(motor_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create motor wiring test task!");
+    } else {
+        ESP_LOGI(TAG, "Motor wiring test task started.");
+    }
+
+    while (1)
+    {
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+#else
     //Initialise I2C with error checking
     esp_err_t i2c_result = i2c_master_init();
     if (i2c_result == ESP_OK) {
@@ -787,4 +806,5 @@ extern "C" void app_main(void)
         // delay time is irrelevant, we just don't want to trip WDT
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+#endif
 }

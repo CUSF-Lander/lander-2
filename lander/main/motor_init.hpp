@@ -4,6 +4,13 @@
 #include "driver/gpio.h"
 #include "driver/rmt.h"
 
+// Temporary motor wiring test mode.
+// When enabled, app_main starts only the motor task, and the motor task ignores
+// ground-station ESTOP/heartbeat state. Disable before normal flight tests.
+#define MOTOR_WIRING_TEST_MODE 1
+#define MOTOR_WIRING_TEST_THROTTLE_PERCENT 5
+#define MOTOR_WIRING_TEST_ZERO_HOLD_MS 5000
+
 // Function to initialize the motor
 void init_2_motors(void* pvParameters);
 //void init_2_motors();

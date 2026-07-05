@@ -125,6 +125,9 @@ esp_err_t DShotRMT::init(bool wait)
 
 esp_err_t DShotRMT::sendThrottle(uint16_t throttle)
 {
+	if (throttle == 0)
+		return writePacket({0, 0}, false);
+
 	if (throttle < DSHOT_THROTTLE_MIN || throttle > DSHOT_THROTTLE_MAX)
 		return ESP_ERR_INVALID_ARG;
 

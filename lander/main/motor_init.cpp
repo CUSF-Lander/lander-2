@@ -22,9 +22,10 @@ void init_2_motors(void* pvParameters)
         initializeMotor(GPIO_NUM_5, RMT_CHANNEL_1);
         */
 
-    //pin configurations: (changed motor2 to 14 as 18 is a flash pin on PICO-V3-02)
-    gpio_num_t dshot_gpio = GPIO_NUM_4;
-    gpio_num_t dshot_gpio2 = GPIO_NUM_14;
+    // Temporary motor wiring test pins.
+    // Warning: GPIO8 is flash-connected on many ESP32 modules.
+    gpio_num_t dshot_gpio = GPIO_NUM_8;
+    gpio_num_t dshot_gpio2 = GPIO_NUM_25;
     rmt_channel_t rmt_channel = RMT_CHANNEL_0;
     rmt_channel_t rmt_channel2 = RMT_CHANNEL_1;
 
@@ -64,18 +65,22 @@ void init_2_motors(void* pvParameters)
     
 
     ESP_LOGI(TAG, "Both ESCs initialized successfully");
-    
+
     // Calculate 5% throttle value
     // The valid throttle range is from MIN_THROTTLE (48) to MAX_THROTTLE (2047)
     // 5% of the usable range: MIN_THROTTLE + 0.05 * (MAX_THROTTLE - MIN_THROTTLE)
-    uint16_t throttle_percent = MIN_THROTTLE + (uint16_t)(0.05 * (MAX_THROTTLE - MIN_THROTTLE));
+    uint16_t throttle_percent = MIN_THROTTLE + (uint16_t)((MOTOR_WIRING_TEST_THROTTLE_PERCENT / 100.0f) * (MAX_THROTTLE - MIN_THROTTLE));
     
-    ESP_LOGI(TAG, "Setting throttle to 5%% (value: %d)", throttle_percent);
+    ESP_LOGI(TAG, "Setting throttle to %d%% (value: %d)", MOTOR_WIRING_TEST_THROTTLE_PERCENT, throttle_percent);
     
 
-    // Main control loop - send the 5% throttle command continuously
-    ESP_LOGI(TAG, "Entering control loop with 5%% throttle");
+    // Main control loop - send the throttle command continuously
+#if MOTOR_WIRING_TEST_MODE
+    ESP_LOGW(TAG, "MOTOR_WIRING_TEST_MODE enabled: ignoring ground-station timeout and software ESTOP");
+#endif
+    ESP_LOGI(TAG, "Entering control loop with %d%% throttle", MOTOR_WIRING_TEST_THROTTLE_PERCENT);
     while (true) {
+#if !MOTOR_WIRING_TEST_MODE
         // Automatically trigger ESTOP if no messages from GS in 500ms
         if (last_gs_msg_time > 0 && (esp_timer_get_time() - last_gs_msg_time) > 500000) {
             if (!estop_triggered) {
@@ -91,6 +96,7 @@ void init_2_motors(void* pvParameters)
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
+#endif
 
         // Send the throttle % command
         esc.sendThrottle(throttle_percent);
