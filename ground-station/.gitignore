@@ -3,4 +3,5 @@ telemetry_log_*.csv
 __pycache__/
 *.pyc
 sdkconfig.old
+.vscode/
 
