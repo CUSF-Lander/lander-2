@@ -144,13 +144,31 @@ esp_err_t DShotRMT::sendThrottle(uint16_t throttle)
 	return writePacket({throttle, 0}, false);
 }
 
+esp_err_t DShotRMT::sendDirectionCommand(bool reversed)
+{
+	// BLHeli_S and BLHeli_32 require direction commands to be sent with the
+	// telemetry bit set while the motor is stopped. The caller must send the
+	// same command at least six times; ten repetitions provide margin.
+	return writePacket(
+			{reversed ? DIGITAL_CMD_SPIN_DIRECTION_REVERSED
+					  : DIGITAL_CMD_SPIN_DIRECTION_NORMAL,
+			 1},
+			false);
+}
+
 esp_err_t DShotRMT::setReversed(bool reversed)
 {
-	DSHOT_ERROR_CHECK(rmt_wait_tx_done(_rmtChannel, 1));
-	DSHOT_ERROR_CHECK(repeatPacketTicks({DSHOT_THROTTLE_MIN, 0}, 200 / portTICK_PERIOD_MS));
-	DSHOT_ERROR_CHECK(repeatPacket(
-			{reversed ? DIGITAL_CMD_SPIN_DIRECTION_REVERSED : DIGITAL_CMD_SPIN_DIRECTION_NORMAL, 1},
-			10));
+	// Commands are accepted only at zero throttle. Command 21 temporarily
+	// reverses the saved ESC direction; command 20 restores the saved direction.
+	DSHOT_ERROR_CHECK(
+			repeatPacketTicks({0, 0}, pdMS_TO_TICKS(300)));
+	for (int i = 0; i < 10; i++)
+	{
+		DSHOT_ERROR_CHECK(sendDirectionCommand(reversed));
+		vTaskDelay(1);
+	}
+	DSHOT_ERROR_CHECK(
+			repeatPacketTicks({0, 0}, pdMS_TO_TICKS(500)));
 	return ESP_OK;
 }
 

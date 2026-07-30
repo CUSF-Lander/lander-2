@@ -85,6 +85,70 @@ void init_2_motors(void* pvParameters)
 
     ESP_LOGI(TAG, "Both ESCs armed successfully");
 
+#if MOTOR_REVERSE_BOTH_ON_STARTUP
+    // BLHeli_S command 21 is a temporary reversal relative to the direction
+    // saved in ESC flash. Send it at every startup, while both motors remain
+    // at zero throttle. Ten identical packets exceed the six-packet minimum.
+    ESP_LOGW(TAG, "Applying temporary DShot reversal to both motors");
+
+    const TickType_t direction_zero_start = xTaskGetTickCount();
+    const TickType_t direction_zero_duration =
+        pdMS_TO_TICKS(MOTOR_DIRECTION_COMMAND_ZERO_HOLD_MS);
+    while ((xTaskGetTickCount() - direction_zero_start) <
+           direction_zero_duration) {
+        result = esc.sendThrottle(0);
+        result2 = esc2.sendThrottle(0);
+        if (result != ESP_OK || result2 != ESP_OK) {
+            ESP_LOGE(TAG,
+                     "Failed to hold zero before direction command "
+                     "(ESC1: %s, ESC2: %s)",
+                     esp_err_to_name(result), esp_err_to_name(result2));
+            ESP_LOGE(TAG, "Motor output disabled");
+            vTaskDelete(NULL);
+            return;
+        }
+        vTaskDelay(packet_interval);
+    }
+
+    for (int i = 0; i < MOTOR_DIRECTION_COMMAND_REPEATS; i++) {
+        result = esc.sendDirectionCommand(true);
+        result2 = esc2.sendDirectionCommand(true);
+        if (result != ESP_OK || result2 != ESP_OK) {
+            ESP_LOGE(TAG,
+                     "Failed to send direction command "
+                     "(ESC1: %s, ESC2: %s)",
+                     esp_err_to_name(result), esp_err_to_name(result2));
+            ESP_LOGE(TAG, "Motor output disabled");
+            vTaskDelete(NULL);
+            return;
+        }
+        vTaskDelay(packet_interval);
+    }
+
+    const TickType_t direction_settle_start = xTaskGetTickCount();
+    const TickType_t direction_settle_duration =
+        pdMS_TO_TICKS(MOTOR_DIRECTION_COMMAND_SETTLE_MS);
+    while ((xTaskGetTickCount() - direction_settle_start) <
+           direction_settle_duration) {
+        result = esc.sendThrottle(0);
+        result2 = esc2.sendThrottle(0);
+        if (result != ESP_OK || result2 != ESP_OK) {
+            ESP_LOGE(TAG,
+                     "Failed to hold zero after direction command "
+                     "(ESC1: %s, ESC2: %s)",
+                     esp_err_to_name(result), esp_err_to_name(result2));
+            ESP_LOGE(TAG, "Motor output disabled");
+            vTaskDelete(NULL);
+            return;
+        }
+        vTaskDelay(packet_interval);
+    }
+
+    ESP_LOGI(TAG,
+             "DShot reversal commands sent to both motors; "
+             "direction must be verified with propellers removed");
+#endif
+
     // Calculate 5% throttle value
     // The valid throttle range is from MIN_THROTTLE (48) to MAX_THROTTLE (2047)
     // 5% of the usable range: MIN_THROTTLE + 0.05 * (MAX_THROTTLE - MIN_THROTTLE)
