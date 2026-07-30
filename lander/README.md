@@ -12,3 +12,21 @@ The current plan is to implement a Linear Quadratic Regulator for Full State Fee
 
 # Setup Guide
 1. Clone the repository by `git clone https://github.com/CUSF-Lander/lander-2.git --recurse-submodules`
+
+## Motor wiring
+
+The current counter-rotating propeller stack uses this DShot mapping:
+
+| Propeller | ESP32 pin | RMT channel | ESC instance |
+| --- | ---: | ---: | --- |
+| Bottom | GPIO 4 | 0 | ESC 1 |
+| Top | GPIO 25 | 1 | ESC 2 |
+
+With the previous sequential initialization, the bottom propeller initialized
+first and the top propeller initialized approximately five seconds later. The
+current implementation arms both ESCs simultaneously by sending zero-throttle
+DShot packets to both channels during the arming period.
+
+## Problems encountered and fixes
+
+- [2026-07-30 — Debugging DShot: RMT clock, shared ground and ESC arming](learning_diary/2026-07-30-debugging-dshot-rmt-clock-and-esc-wiring.md)

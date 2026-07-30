@@ -81,20 +81,30 @@ esp_err_t DShotRMT::install(gpio_num_t gpio, rmt_channel_t rmtChannel)
 {
 	_rmtChannel = rmtChannel;
 
-	rmt_config_t config;
-
-	config.channel = rmtChannel;
-	config.rmt_mode = RMT_MODE_TX;
-	config.gpio_num = gpio;
-	config.mem_block_num = 1;
+	// Fully initialize the config. If the flags field contains an accidental
+	// RMT_CHANNEL_FLAGS_AWARE_DFS bit, the legacy driver uses the 1 MHz
+	// reference clock and makes the DShot waveform roughly 80x too slow.
+	rmt_config_t config = RMT_DEFAULT_CONFIG_TX(gpio, rmtChannel);
 	config.clk_div = 7;
-
-	config.tx_config.loop_en = false;
-	config.tx_config.carrier_en = false;
-	config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-	config.tx_config.idle_output_en = true;
+	config.flags = 0;
 
 	DSHOT_ERROR_CHECK(rmt_config(&config));
+
+	uint32_t counterClockHz = 0;
+	DSHOT_ERROR_CHECK(rmt_get_counter_clock(rmtChannel, &counterClockHz));
+	ESP_LOGI(TAG, "RMT channel %d counter clock: %lu Hz",
+			 static_cast<int>(rmtChannel),
+			 static_cast<unsigned long>(counterClockHz));
+
+	// DShot600 uses an RMT counter near 80 MHz / 7 = 11.43 MHz.
+	// Refuse to send malformed motor commands if the wrong clock is active.
+	if (counterClockHz < 11000000U || counterClockHz > 12000000U)
+	{
+		ESP_LOGE(TAG,
+				 "RMT channel %d counter clock is invalid for DShot600",
+				 static_cast<int>(rmtChannel));
+		return ESP_ERR_INVALID_STATE;
+	}
 
 	return rmt_driver_install(rmtChannel, 0, 0);
 }
@@ -113,11 +123,11 @@ esp_err_t DShotRMT::init(bool wait)
 		writeData(0, true);
 	}
 
-	ESP_LOGD(TAG, "Sending idle throttle");
+	ESP_LOGD(TAG, "Holding zero throttle for arming delay");
 	if (wait)
-		DSHOT_ERROR_CHECK(repeatPacketTicks({DSHOT_THROTTLE_MIN, 0}, DSHOT_ARM_DELAY));
+		DSHOT_ERROR_CHECK(repeatPacketTicks({0, 0}, DSHOT_ARM_DELAY));
 	else
-		writePacket({DSHOT_THROTTLE_MIN, 0}, false);
+		DSHOT_ERROR_CHECK(writePacket({0, 0}, false));
 
 	ESP_LOGD(TAG, "ESC armed");
 	return ESP_OK;

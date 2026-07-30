@@ -22,9 +22,14 @@ void init_2_motors(void* pvParameters)
         initializeMotor(GPIO_NUM_5, RMT_CHANNEL_1);
         */
 
-    // Temporary motor wiring test pins.
-    // Warning: GPIO8 is flash-connected on many ESP32 modules.
-    gpio_num_t dshot_gpio = GPIO_NUM_8;
+    // Physical motor mapping for the current counter-rotating propeller stack:
+    //   ESC 1 / RMT channel 0 / GPIO 4  = bottom propeller
+    //   ESC 2 / RMT channel 1 / GPIO 25 = top propeller
+    //
+    // In the old sequential initialization, the bottom propeller initialized
+    // first and the top propeller initialized about five seconds later. The
+    // arming loop below now sends zero throttle to both ESCs simultaneously.
+    gpio_num_t dshot_gpio = GPIO_NUM_4;
     gpio_num_t dshot_gpio2 = GPIO_NUM_25;
     rmt_channel_t rmt_channel = RMT_CHANNEL_0;
     rmt_channel_t rmt_channel2 = RMT_CHANNEL_1;
@@ -38,33 +43,47 @@ void init_2_motors(void* pvParameters)
     // Install the DShot driver on the specified GPIO pin and RMT channel
     esp_err_t result = esc.install(dshot_gpio, rmt_channel);
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install DShot driver: %d", result);
-        //return;
+        ESP_LOGE(TAG, "Failed to install ESC 1 DShot driver: %s",
+                 esp_err_to_name(result));
+        ESP_LOGE(TAG, "Motor output disabled");
+        vTaskDelete(NULL);
+        return;
     }
 
 
     esp_err_t result2 = esc2.install(dshot_gpio2, rmt_channel2);
     if (result2 != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install DShot driver: %d", result2);
-        //return;
-    }
-    
-    // Initialize the ESC
-    result = esc.init();
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize ESC 1: %d", result);
-        //return;
+        ESP_LOGE(TAG, "Failed to install ESC 2 DShot driver: %s",
+                 esp_err_to_name(result2));
+        ESP_LOGE(TAG, "Motor output disabled");
+        vTaskDelete(NULL);
+        return;
     }
 
-    
-    result2 = esc2.init();
-    if (result2 != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize ESC 2: %d", result2);
-        //return;
-    }
-    
+    // Arm both ESCs together. Sequential calls to esc.init() made the second
+    // motor start its five-second arming period after the first one finished.
+    ESP_LOGI(TAG, "Holding both ESCs at zero throttle for %d ms",
+             MOTOR_WIRING_TEST_ZERO_HOLD_MS);
+    const TickType_t arm_start = xTaskGetTickCount();
+    const TickType_t arm_duration =
+        pdMS_TO_TICKS(MOTOR_WIRING_TEST_ZERO_HOLD_MS);
+    const TickType_t packet_interval = pdMS_TO_TICKS(10);
 
-    ESP_LOGI(TAG, "Both ESCs initialized successfully");
+    while ((xTaskGetTickCount() - arm_start) < arm_duration) {
+        result = esc.sendThrottle(0);
+        result2 = esc2.sendThrottle(0);
+        if (result != ESP_OK || result2 != ESP_OK) {
+            ESP_LOGE(TAG,
+                     "Failed to send arming packets (ESC1: %s, ESC2: %s)",
+                     esp_err_to_name(result), esp_err_to_name(result2));
+            ESP_LOGE(TAG, "Motor output disabled");
+            vTaskDelete(NULL);
+            return;
+        }
+        vTaskDelay(packet_interval);
+    }
+
+    ESP_LOGI(TAG, "Both ESCs armed successfully");
 
     // Calculate 5% throttle value
     // The valid throttle range is from MIN_THROTTLE (48) to MAX_THROTTLE (2047)
@@ -98,22 +117,18 @@ void init_2_motors(void* pvParameters)
         }
 #endif
 
-        // Send the throttle % command
-        esc.sendThrottle(throttle_percent);
-        /*if (throttle_result != ESP_OK) {
-            ESP_LOGE(TAG, "Error sending throttle command: %d", throttle_result);
-        }*/
-        //ESP_LOGI(TAG, "Throttle command sent to first ESC: %d", throttle_result);
-
-        // Send the throttle % command to the second ESC
-        esc2.sendThrottle(throttle_percent); 
-        /*if (throttle_result2 != ESP_OK) {
-            ESP_LOGE(TAG, "Error sending throttle command: %d", throttle_result);
-        }*/
-        //ESP_LOGI(TAG, "Throttle command sent to second ESC: %d", throttle_result2);
+        // Send the throttle command to both ESCs and fail safe to zero if
+        // either transmission reports an error.
+        result = esc.sendThrottle(throttle_percent);
+        result2 = esc2.sendThrottle(throttle_percent);
+        if (result != ESP_OK || result2 != ESP_OK) {
+            ESP_LOGE(TAG,
+                     "DShot transmission failed (ESC1: %s, ESC2: %s)",
+                     esp_err_to_name(result), esp_err_to_name(result2));
+            throttle_percent = 0;
+        }
         
-        // Small delay to prevent overwhelming the ESC with commands
-        vTaskDelay(pdMS_TO_TICKS(10));  // 1 tick delay, typically 1ms with default FreeRTOS config
+        vTaskDelay(packet_interval); // 100 Hz update rate
     }
     
     // Note: This function will never return due to the infinite loop above
