@@ -123,14 +123,15 @@ void state_estimation(void *pvParameters)
     // -------------------------------------------------------------------------
     // Vehicle physical constants — PLACEHOLDER: fill in befor  e use
     // -------------------------------------------------------------------------
-    constexpr float KT   = 0.0f;   // thrust coefficient        [N/(rad/s)²]
-    constexpr float KM   = 0.0f;   // motor torque coefficient  [N·m/(rad/s)²]
-    constexpr float ARM  = 0.0f;   // gimbal moment arm         [m]
+    constexpr float KT   = 0.021f;   // thrust coefficient        [N/(rad/s)²]
+    constexpr float KM   = 0.00105f;   // motor torque coefficient  [N·m/(rad/s)²]
+    constexpr float ARM  = 0.1f;   // gimbal moment arm         [m]
     constexpr float MASS = 1.0f;   // vehicle mass              [kg]
     constexpr float GRAV = 9.81f;  // gravitational acceleration [m/s²]
-    constexpr float JX   = 1.0f;   // moment of inertia x       [kg·m²]
-    constexpr float JY   = 1.0f;   // moment of inertia y       [kg·m²]
-    constexpr float JZ   = 1.0f;   // moment of inertia z       [kg·m²]
+    constexpr float JX   = 0.1f;   // moment of inertia x       [kg·m²]
+    constexpr float JY   = 0.1f;   // moment of inertia y       [kg·m²]
+    constexpr float JZ   = 0.3f;   // moment of inertia z       [kg·m²]
+
 
     // -------------------------------------------------------------------------
     // State vector — zero-initialised, persists across iterations
