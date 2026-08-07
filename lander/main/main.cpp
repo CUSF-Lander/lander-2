@@ -121,7 +121,7 @@ void state_estimation(void *pvParameters)
     constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
 
     // -------------------------------------------------------------------------
-    // Vehicle physical constants — PLACEHOLDER: fill in before use
+    // Vehicle physical constants — PLACEHOLDER: fill in befor  e use
     // -------------------------------------------------------------------------
     constexpr float KT   = 0.0f;   // thrust coefficient        [N/(rad/s)²]
     constexpr float KM   = 0.0f;   // motor torque coefficient  [N·m/(rad/s)²]
@@ -163,10 +163,47 @@ void state_estimation(void *pvParameters)
 
     // -------------------------------------------------------------------------
     // Kf_nogps (18×10) and Kf_gps (18×13) — fixed Kalman gains, row-major
-    // PLACEHOLDER: fill in tuned values before use.
     // -------------------------------------------------------------------------
-    static const float Kf_nogps[18 * 10] = {0};
-    static const float Kf_gps[18 * 13]   = {0};
+    static const float Kf_nogps[18 * 10] = {
+     0.0f,     0.0076f,  0.0f,     0.0003f, 0.0f,     0.0f,     0.0f,    -0.0002f, 0.0f,     0.0f,
+    -0.0076f,  0.0f,     0.0f,     0.0f,    0.0003f,  0.0f,     0.0002f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0159f,
+     0.0076f,  0.0f,     0.0f,     0.0f,   -0.0002f,  0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0076f,  0.0f,     0.0002f, 0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,
+     0.0f,     0.0f,     0.0087f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,
+     0.0f,     0.0078f,  0.0f,     0.0003f, 0.0f,     0.0f,     0.0f,    -0.0001f,  0.0f,     0.0f,
+    -0.0078f,  0.0f,     0.0f,     0.0f,    0.0003f,  0.0f,     0.0001f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0129f,
+     0.0060f,  0.0f,     0.0f,     0.0f,   -0.0001f,  0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0060f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,
+     0.0f,     0.0f,     0.0060f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,
+     0.0f,     0.0080f,  0.0f,     0.8911f, 0.0f,     0.0f,     0.0f,     0.0045f,  0.0f,     0.0f,
+    -0.0080f,  0.0f,     0.0f,     0.0f,    0.8911f,  0.0f,    -0.0045f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.8909f,  0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f
+    };
+    static const float Kf_gps[18 * 13] = {
+     0.0007f,  0.0f,     0.0f,     0.0000f, 0.0f,     0.0f,     0.0f,    -0.0000f, 0.0f,     0.0f,     0.0357f, 0.0f,     0.0f,
+    -0.0007f,  0.0f,     0.0f,     0.0f,    0.0000f,  0.0f,     0.0000f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0357f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0014f, 0.0f,     0.0f,    0.0345f,
+     0.0076f,  0.0f,     0.0f,     0.0f,   -0.0002f,  0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,     0.0f,   -0.0010f, 0.0f,
+     0.0f,     0.0076f,  0.0f,     0.0002f, 0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,     0.0010f, 0.0f,     0.0f,
+     0.0f,     0.0f,     0.0087f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0032f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,    -0.0000f,  0.0f,     0.0f,     0.0651f, 0.0f,     0.0f,
+    -0.0032f,  0.0f,     0.0f,     0.0f,    0.0001f,  0.0f,     0.0000f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0651f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0025f, 0.0f,     0.0f,    0.0633f,
+     0.0060f,  0.0f,     0.0f,     0.0f,   -0.0001f,  0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0000f, 0.0f,
+     0.0f,     0.0060f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,    -0.0000f, 0.0f,     0.0f,
+     0.0f,     0.0f,     0.0060f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0080f,  0.0f,     0.8911f, 0.0f,     0.0f,     0.0f,     0.0045f,  0.0f,     0.0f,     0.0011f, 0.0f,     0.0f,
+    -0.0080f,  0.0f,     0.0f,     0.0f,    0.8911f,  0.0f,    -0.0045f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0011f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.8909f,  0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f
+    };
 
     // GPS freshness tracking
     static float last_gps[3] = {0.0f, 0.0f, 0.0f};
@@ -202,11 +239,14 @@ void state_estimation(void *pvParameters)
 
         // -----------------------------------------------------------------
         // 3. Build control input U = [a1, a2, wt1, wt2]
-        //    PLACEHOLDER: populate with actual actuator readings when available.
         // -----------------------------------------------------------------
         float U[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        // U[0] = gimbal1_angle; U[1] = gimbal2_angle;
-        // U[2] = motor1_speed;  U[3] = motor2_speed;
+        portENTER_CRITICAL(&global_spinlock);
+        U[0] = U_hov.alpha1  //gimbal1_angle
+        U[1] = U_hov.alpha2  //gimbal2_angle
+        U[2] = U_hov.omega1  //motor1_speed
+        U[3] = U_hov.omega2  //motor2_speed
+        portEXIT_CRITICAL(&global_spinlock);
 
         // -----------------------------------------------------------------
         // 4. Rebuild linearised A, B, H_imu around current state and inputs
