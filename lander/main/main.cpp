@@ -121,7 +121,7 @@ void state_estimation(void *pvParameters)
     constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
 
     // -------------------------------------------------------------------------
-    // Vehicle physical constants — PLACEHOLDER: fill in befor  e use
+    // Vehicle physical constants
     // -------------------------------------------------------------------------
     constexpr float KT   = 0.021f;   // thrust coefficient        [N/(rad/s)²]
     constexpr float KM   = 0.00105f;   // motor torque coefficient  [N·m/(rad/s)²]
@@ -267,18 +267,48 @@ void state_estimation(void *pvParameters)
         // -----------------------------------------------------------------
         // 5. Build measurement vector Z and select H / Kf
         // -----------------------------------------------------------------
+        
+        //Create and transform IMU linear acceleration vectors from body to world frame
+        float Z_imu_acc_body[3] = {0};
+        Z_imu_acc_body[0] = static_cast<float>(meas_lin_acc.x);   // ax body [m/s²]
+        Z_imu_acc_body[1] = static_cast<float>(meas_lin_acc.y);   // ay body
+        Z_imu_acc_body[2] = static_cast<float>(meas_lin_acc.z);   // az body
+        
+        //Note: Are directly using the sensor values, instead of the kalman filter estimates
+        //Probably fine, those measurements are more accurate. 
+        float p_rad = static_cast<float>(meas_euler.x) * deg2rad; //pitch
+        float q_rad = static_cast<float>(meas_euler.y) * deg2rad; //yaw 
+        float u_rad = static_cast<float>(meas_euler.z) * deg2rad; //roll
+
+        float c_p = cosf(p_rad);
+        float s_p = sinf(p_rad);
+        float c_q = cosf(q_rad);
+        float s_q = sinf(q_rad);
+        float c_u = cosf(u_rad);
+        float s_u = sinf(u_rad);
+      
+        static const float R[3 * 3] = {
+            c_q*c_u, s_p*s_q*c_u - c_p * s_u, c_p*s_q*c_u + s_p*s_u,
+            c_q*s_u, s_p*s_q*s_u + c_p*c_u, c_p*s_q*s_u - s_p*c_u,
+            -s_q, s_p*c_q, c_p*c_q
+        };
+
+        float Z_imu_acc_world[3] = {0};
+        dspm_mult_f32(R, Z_imu_acc_body, Z_imu_acc_world, 3, 3, 1);  // R(3x3) * Z(3x1)
+
+
         float Z[13] = {0};
         Z[0] = meas_euler.x * deg2rad;               // roll  [rad]
         Z[1] = meas_euler.y * deg2rad;               // pitch [rad]
         Z[2] = meas_euler.z * deg2rad;               // yaw   [rad]
-        Z[3] = static_cast<float>(meas_lin_acc.x);   // ax body [m/s²]
-        Z[4] = static_cast<float>(meas_lin_acc.y);   // ay body
-        Z[5] = static_cast<float>(meas_lin_acc.z);   // az body
+        Z[3] = Z_imu_acc_world[0];   // ax world [m/s²]
+        Z[4] = Z_imu_acc_world[1];   // ay world
+        Z[5] = Z_imu_acc_world[2];   // az world
         Z[6] = static_cast<float>(meas_ang_vel.x);   // wx [rad/s]
         Z[7] = static_cast<float>(meas_ang_vel.y);   // wy
         Z[8] = static_cast<float>(meas_ang_vel.z);   // wz
         Z[9] = static_cast<float>(baro_alt);          // baro altitude [m]
-
+        
         const float *H_ptr;
         const float *Kf_ptr;
         int meas_dim;
@@ -297,7 +327,7 @@ void state_estimation(void *pvParameters)
         }
 
         // -----------------------------------------------------------------
-        // 6. Prediction: Xpre = A*X + B*U
+        // 6. Prediction: Xpre = A*X + B*U 
         // -----------------------------------------------------------------
         float Xpre[18]  = {0};
         float tmp18[18] = {0};
@@ -317,12 +347,14 @@ void state_estimation(void *pvParameters)
         for (int i = 0; i < meas_dim; i++) innov[i] = Z[i] - HXpre[i];
 
         // -----------------------------------------------------------------
-        // 8. Update: X = Xpre + Kf*innov
+        // 8. Update: X = Xpre + Kf*innov + g_correction
         // -----------------------------------------------------------------
         float Kf_innov[18] = {0};
+        float g_correction[18] = {0}
+        g_correction[14] = -GRAV
 
         dspm_mult_f32(Kf_ptr, innov, Kf_innov, 18, meas_dim, 1);  // Kf(18×m) * innov(m×1)
-        for (int i = 0; i < 18; i++) X[i] = Xpre[i] + Kf_innov[i];
+        for (int i = 0; i < 18; i++) X[i] = Xpre[i] + Kf_innov[i] + g_correction[i];
 
         // -----------------------------------------------------------------
         // 9. Write estimated state to globals
