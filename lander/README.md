@@ -51,6 +51,18 @@ The FeatherWing is hardwired to the Feather's I2C pins: SDA is GPIO 22 and SCL
 is GPIO 20. The temporary serial servo test is retained but disabled for the
 normal application build.
 
+## Hardware validation status
+
+On 2026-08-08, the merged ESP-IDF 6 firmware was built, flashed, and exercised
+on the drone hardware. The full normal startup path behaved as expected,
+including the sensor stack, communications, simultaneous ESC initialization,
+DShot motor control, and startup/ESTOP safety behavior.
+
+Still to test: closed-loop servo actuation and the connection from the control
+system outputs to PCA9685 channels 0 and 7. That integration is being
+implemented separately; the current position and hover controllers calculate
+outputs but do not yet command the physical servos.
+
 ## Problems encountered and fixes
 
 - [2026-07-30 — Debugging DShot: RMT clock, shared ground and ESC arming](learning_diary/2026-07-30-debugging-dshot-rmt-clock-and-esc-wiring.md)
