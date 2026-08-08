@@ -1,0 +1,5 @@
+# Project defaults. sdkconfig itself is regenerated per build and is gitignored;
+# persistent configuration belongs here.
+
+# Target chip
+CONFIG_IDF_TARGET="esp32"

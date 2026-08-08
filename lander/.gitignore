@@ -5,3 +5,4 @@ sdkconfig.old
 .vscode/
 managed_components/
 non_firmware/
+telemetry_log_*.csv
