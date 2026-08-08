@@ -19,15 +19,31 @@ The current counter-rotating propeller stack uses this DShot mapping:
 
 | Propeller | ESP32 pin | RMT channel | ESC instance |
 | --- | ---: | ---: | --- |
-| Bottom (Motor is reversed!) | GPIO 4 | 0 | ESC 1 |
-| Top (Motor is reversed!) | GPIO 25 | 1 | ESC 2 |
+| Bottom | GPIO 4 | 0 | ESC 1 |
+| Top | GPIO 25 | 1 | ESC 2 |
 
 With the previous sequential initialization, the bottom propeller initialized
 first and the top propeller initialized approximately five seconds later. The
 current implementation arms both ESCs simultaneously by sending zero-throttle
 DShot packets to both channels during the arming period.
 
-Note: The motors are reversed by applying tempoary DShot reversal commands after both ESCs are armed sucessfully 
+The motor leads are now wired for the required directions. Temporary DShot
+reversal remains available in the firmware for future bench configurations, but
+`MOTOR_REVERSE_BOTH_ON_STARTUP` is disabled by default.
+
+## Servo wiring
+
+The two TVC servos are connected to the PCA9685 Servo FeatherWing:
+
+| Servo | PCA9685 channel |
+| --- | ---: |
+| TVC servo 1 | 0 |
+| TVC servo 2 | 7 |
+
+The FeatherWing is hardwired to the Feather's I2C pins: SDA is GPIO 22 and SCL
+is GPIO 20. The temporary serial servo test is retained but disabled for the
+normal application build.
+
 ## Problems encountered and fixes
 
 - [2026-07-30 — Debugging DShot: RMT clock, shared ground and ESC arming](learning_diary/2026-07-30-debugging-dshot-rmt-clock-and-esc-wiring.md)

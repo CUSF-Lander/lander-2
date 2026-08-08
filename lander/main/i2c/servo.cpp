@@ -76,7 +76,7 @@ esp_err_t pca9685_set_pwm(uint8_t servo_num, uint16_t on, uint16_t off) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    ESP_LOGI(TAG, "Setting servo %d: ON = %d, OFF = %d", servo_num, on, off);
+    ESP_LOGD(TAG, "Setting servo %d: ON = %d, OFF = %d", servo_num, on, off);
 
     // Calculate the register addresses for the specified servo
     uint8_t led_on_l  = 0x06 + (4 * servo_num);
@@ -98,6 +98,30 @@ esp_err_t pca9685_set_pwm(uint8_t servo_num, uint16_t on, uint16_t off) {
 
     err = pca9685_write8(led_off_h, (off >> 8) & 0x0F);
     return err;
+}
+
+esp_err_t pca9685_set_channel_off(uint8_t servo_num) {
+    if (servo_num > 15) {
+        ESP_LOGE(TAG, "Invalid servo number: %d", servo_num);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const uint8_t led_on_l  = 0x06 + (4 * servo_num);
+    const uint8_t led_on_h  = 0x07 + (4 * servo_num);
+    const uint8_t led_off_l = 0x08 + (4 * servo_num);
+    const uint8_t led_off_h = 0x09 + (4 * servo_num);
+
+    esp_err_t err = pca9685_write8(led_on_l, 0x00);
+    if (err != ESP_OK) return err;
+
+    err = pca9685_write8(led_on_h, 0x00);
+    if (err != ESP_OK) return err;
+
+    err = pca9685_write8(led_off_l, 0x00);
+    if (err != ESP_OK) return err;
+
+    // LEDn_OFF_H bit 4 is the PCA9685's dedicated full-OFF control.
+    return pca9685_write8(led_off_h, 0x10);
 }
 
 /**
@@ -144,6 +168,7 @@ esp_err_t pca9685_init(){
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error: %s", esp_err_to_name(err));
         ESP_LOGE(TAG, "Failed to reset PCA9685");
+        return err;
     }
     
     // // Set PWM to 0 for all channels to ensure a defined initial state
@@ -156,9 +181,19 @@ esp_err_t pca9685_init(){
     // }
 
     
-    pca9685_write8(0x00, 0x20); // MODE 1 Register
+    err = pca9685_write8(0x00, 0x20); // MODE 1 Register
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to enable PCA9685 auto-increment: %s",
+                 esp_err_to_name(err));
+        return err;
+    }
 
-    pca9685_set_pwm_freq(50);
-    
-    return err;
+    err = pca9685_set_pwm_freq(50);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set PCA9685 PWM frequency: %s",
+                 esp_err_to_name(err));
+        return err;
+    }
+
+    return ESP_OK;
 }

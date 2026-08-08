@@ -567,29 +567,14 @@ void bmp390_task(void *pvParameters)
     }
 }
 
-void testServo() {
-    while(1){
-        
-        pca9685_set_servo_angle(1, 0);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        pca9685_set_servo_angle(1, 45);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        pca9685_set_servo_angle(1, 90);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        pca9685_set_servo_angle(1, 135);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        pca9685_set_servo_angle(1, 180);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        // 110-120 is the start point, 540-550 is the end point
-    }
-}
-
 void servo_test_via_serial_blocking()
 {
     setvbuf(stdin, NULL, _IONBF, 0);
-    ESP_LOGI(TAG, "Servo test mode is active. Press Enter after command.");
-    ESP_LOGI(TAG, "Format: <servo 0|1> <angle 0-180> (example: 1 90)");
-    ESP_LOGI(TAG, "Safety lock: test mode is blocking and will not continue full initialization.");
+    ESP_LOGW(TAG, "SERVO_TERMINAL_TEST_MODE enabled for PCA9685 channel %d",
+             SERVO_TERMINAL_TEST_CHANNEL);
+    ESP_LOGW(TAG, "Motors, IMU, GPS, ESP-NOW, BMP390, and control tasks are bypassed");
+    ESP_LOGI(TAG, "Enter an angle from 0 to 180, then press Enter (example: 90)");
+    ESP_LOGI(TAG, "Enter 'off' to disable the servo pulse, or 'help' for instructions");
 
     char line[64] = {0};
     size_t idx = 0;
@@ -609,20 +594,29 @@ void servo_test_via_serial_blocking()
             line[idx] = '\0';
             idx = 0;
 
-            int servo_id = -1;
-            int angle = -1;
-            int matched = sscanf(line, "%d %d", &servo_id, &angle);
-            if (matched != 2) {
-                matched = sscanf(line, "servo %d %d", &servo_id, &angle);
-            }
-
-            if (matched != 2) {
-                ESP_LOGW(TAG, "Invalid input. Use: <servo 0|1> <angle 0-180>");
+            if (strcmp(line, "off") == 0) {
+                esp_err_t err =
+                    pca9685_set_channel_off(SERVO_TERMINAL_TEST_CHANNEL);
+                if (err != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to disable servo channel %d: %s",
+                             SERVO_TERMINAL_TEST_CHANNEL,
+                             esp_err_to_name(err));
+                } else {
+                    ESP_LOGI(TAG, "Servo channel %d output disabled",
+                             SERVO_TERMINAL_TEST_CHANNEL);
+                }
                 continue;
             }
 
-            if (servo_id != 0 && servo_id != 1) {
-                ESP_LOGW(TAG, "Invalid servo id %d. Allowed: 0 or 1", servo_id);
+            if (strcmp(line, "help") == 0) {
+                ESP_LOGI(TAG, "Type one angle from 0 to 180, or type 'off'");
+                continue;
+            }
+
+            int angle = -1;
+            char extra = '\0';
+            if (sscanf(line, "%d %c", &angle, &extra) != 1) {
+                ESP_LOGW(TAG, "Invalid input. Type an angle from 0 to 180, or 'off'");
                 continue;
             }
 
@@ -631,13 +625,17 @@ void servo_test_via_serial_blocking()
                 continue;
             }
 
-            esp_err_t err = pca9685_set_servo_angle((uint8_t)servo_id, (float)angle);
+            esp_err_t err = pca9685_set_servo_angle(
+                SERVO_TERMINAL_TEST_CHANNEL, (float)angle);
             if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to move servo %d to %d deg: %s", servo_id, angle, esp_err_to_name(err));
+                ESP_LOGE(TAG, "Failed to move servo channel %d to %d deg: %s",
+                         SERVO_TERMINAL_TEST_CHANNEL, angle,
+                         esp_err_to_name(err));
                 continue;
             }
 
-            ESP_LOGI(TAG, "Moved servo %d to %d deg", servo_id, angle);
+            ESP_LOGI(TAG, "Moved servo channel %d to %d deg",
+                     SERVO_TERMINAL_TEST_CHANNEL, angle);
             continue;
         }
 
@@ -656,14 +654,48 @@ void servo_test_via_serial_blocking()
             line[idx++] = (char)ch;
         } else {
             idx = 0;
-            ESP_LOGW(TAG, "Input too long. Use: <servo 0|1> <angle 0-180>");
+            ESP_LOGW(TAG, "Input too long. Type an angle from 0 to 180, or 'off'");
         }
     }
 }
 
 extern "C" void app_main(void)
 {
-#if MOTOR_WIRING_TEST_MODE
+#if SERVO_TERMINAL_TEST_MODE
+    ESP_LOGW(TAG, "Starting isolated PCA9685 terminal servo test");
+
+    esp_err_t i2c_result = i2c_master_init();
+    if (i2c_result != ESP_OK) {
+        ESP_LOGE(TAG, "I2C initialization failed: %s",
+                 esp_err_to_name(i2c_result));
+        return;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    esp_err_t pca_result = pca9685_init();
+    if (pca_result != ESP_OK) {
+        ESP_LOGE(TAG, "PCA9685 initialization failed: %s",
+                 esp_err_to_name(pca_result));
+        return;
+    }
+
+    // Release every output so no stale PCA9685 channel can move a servo.
+    // Nothing moves until the operator enters an angle in the terminal.
+    for (uint8_t channel = 0; channel < 16; channel++) {
+        esp_err_t off_result = pca9685_set_channel_off(channel);
+        if (off_result != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to disable servo channel %u before test: %s",
+                     channel, esp_err_to_name(off_result));
+            return;
+        }
+    }
+    servo_test_via_serial_blocking();
+    ESP_LOGE(TAG, "Servo terminal test stopped unexpectedly; motors remain disabled");
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+#elif MOTOR_WIRING_TEST_MODE
     ESP_LOGW(TAG, "MOTOR_WIRING_TEST_MODE enabled: starting only constant-throttle motor wiring test");
     ESP_LOGW(TAG, "IMU, GPS, ESP-NOW, BMP390, and control tasks are bypassed");
 

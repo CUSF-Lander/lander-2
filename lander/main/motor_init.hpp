@@ -7,13 +7,14 @@
 // Temporary motor wiring test mode.
 // When enabled, app_main starts only the motor task, and the motor task ignores
 // ground-station ESTOP/heartbeat state. Disable before normal flight tests.
-#define MOTOR_WIRING_TEST_MODE 1
-#define MOTOR_WIRING_TEST_THROTTLE_PERCENT 5
+#define MOTOR_WIRING_TEST_MODE 0
+#define MOTOR_WIRING_TEST_THROTTLE_PERCENT 0
 #define MOTOR_WIRING_TEST_ZERO_HOLD_MS 5000
 
-// The stock SpeedyBee BLS 50A uses BLHeli_S. DShot command 21 temporarily
-// reverses the saved direction, so it must be sent again after every power-up.
-#define MOTOR_REVERSE_BOTH_ON_STARTUP 1
+// The motor leads are currently wired for the required physical directions, so
+// startup reversal is disabled. Keep this switch and the command code for bench
+// configurations that need temporary DShot command 21 after every power-up.
+#define MOTOR_REVERSE_BOTH_ON_STARTUP 0
 #define MOTOR_DIRECTION_COMMAND_REPEATS 10
 #define MOTOR_DIRECTION_COMMAND_ZERO_HOLD_MS 300
 #define MOTOR_DIRECTION_COMMAND_SETTLE_MS 500
