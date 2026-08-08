@@ -6,10 +6,11 @@
 
 // Temporary motor wiring test mode.
 // When enabled, app_main starts only the motor task, and the motor task ignores
-// ground-station ESTOP/heartbeat state. The throttle defaults to zero so both
-// settings must be changed deliberately before a spinning bench test.
+// ground-station ESTOP/heartbeat state and commands a fixed 5% throttle. Keep
+// the mode disabled for normal builds; enable it only for a controlled bench
+// test with the vehicle restrained and the propeller area clear.
 #define MOTOR_WIRING_TEST_MODE 0
-#define MOTOR_WIRING_TEST_THROTTLE_PERCENT 0
+#define MOTOR_WIRING_TEST_THROTTLE_PERCENT 5
 
 // BLHeli_S ESCs need about five seconds of valid zero-throttle DShot frames
 // before they accept throttle commands.
