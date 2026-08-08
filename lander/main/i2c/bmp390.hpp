@@ -54,6 +54,14 @@ typedef struct {
  */
 esp_err_t bmp390_init();
 
+// Average several stationary readings and define that altitude as zero.
+esp_err_t bmp390_calibrate_altitude_zero(uint16_t sample_count,
+                                         uint32_t sample_interval_ms);
+
+// Move the zero reference to the most recent valid barometer reading. This is
+// non-blocking and is used by ZERO_IMU and immediately before ARM.
+esp_err_t bmp390_zero_altitude_at_current_position();
+
 /**
  * @brief Read compensated temperature and pressure data from the BMP390.
  *

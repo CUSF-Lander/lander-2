@@ -27,5 +27,8 @@ esp_err_t pca9685_write8(uint8_t reg, uint8_t data);
 esp_err_t pca9685_read8(uint8_t reg, uint8_t *data);
 esp_err_t pca9685_set_pwm(uint8_t servo_num, uint16_t on, uint16_t off);
 esp_err_t pca9685_set_channel_off(uint8_t servo_num);
+esp_err_t tvc_servos_set_deflection_rad(float alpha1_rad, float alpha2_rad);
+esp_err_t tvc_servo_outputs_disable();
+void tvc_servo_actuation_task(void *pvParameters);
 
 #endif // LANDER_SERVO

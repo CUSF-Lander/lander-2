@@ -35,6 +35,10 @@ static const char *TAG = "BMP390";
 // Structure to hold calibration data
 static bmp390_calib_data_t calib_data;
 static bool bmp390_initialized = false;
+static portMUX_TYPE altitude_reference_lock = portMUX_INITIALIZER_UNLOCKED;
+static double altitude_zero_m = 0.0;
+static double last_absolute_altitude_m = 0.0;
+static bool altitude_zero_valid = false;
 
 // Helper function to write a single byte to a register
 static esp_err_t bmp390_write8(uint8_t reg, uint8_t data) {
@@ -239,8 +243,9 @@ double calculateAltitude(double pressure, double temperatureCelsius) {
     return CONST * temperatureKelvin * logf(SEA_LEVEL_PRESSURE / pressure);
 }
 
-// Read compensated temperature and pressure data
-esp_err_t bmp390_get_data(double *temperature, double *pressure, double *altitude) {
+// Read compensated temperature, pressure, and absolute barometric altitude.
+static esp_err_t bmp390_get_absolute_data(double *temperature, double *pressure,
+                                          double *absolute_altitude) {
     if (!bmp390_initialized) {
         ESP_LOGE(TAG, "BMP390 not initialized.");
         return ESP_ERR_INVALID_STATE;
@@ -263,7 +268,79 @@ esp_err_t bmp390_get_data(double *temperature, double *pressure, double *altitud
     // Compensate raw values
     *temperature = bmp390_compensate_temp(raw_temp);
     *pressure = bmp390_compensate_press(raw_press);
-    *altitude = calculateAltitude(*pressure, *temperature); // Calculate altitude
+    *absolute_altitude = calculateAltitude(*pressure, *temperature);
 
+    return ESP_OK;
+}
+
+esp_err_t bmp390_calibrate_altitude_zero(uint16_t sample_count,
+                                         uint32_t sample_interval_ms) {
+    if (sample_count == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    double altitude_sum = 0.0;
+    double last_altitude = 0.0;
+    for (uint16_t sample = 0; sample < sample_count; ++sample) {
+        double temperature = 0.0;
+        double pressure = 0.0;
+        esp_err_t result = bmp390_get_absolute_data(
+            &temperature, &pressure, &last_altitude);
+        if (result != ESP_OK) {
+            ESP_LOGE(TAG, "Altitude-zero calibration failed at sample %u/%u: %s",
+                     sample + 1, sample_count, esp_err_to_name(result));
+            return result;
+        }
+        altitude_sum += last_altitude;
+        if (sample + 1 < sample_count) {
+            vTaskDelay(pdMS_TO_TICKS(sample_interval_ms));
+        }
+    }
+
+    const double calibrated_zero = altitude_sum / sample_count;
+    portENTER_CRITICAL(&altitude_reference_lock);
+    altitude_zero_m = calibrated_zero;
+    last_absolute_altitude_m = last_altitude;
+    altitude_zero_valid = true;
+    portEXIT_CRITICAL(&altitude_reference_lock);
+
+    ESP_LOGI(TAG,
+             "Altitude zero calibrated from %u samples (absolute reference %.2f m)",
+             sample_count, calibrated_zero);
+    return ESP_OK;
+}
+
+esp_err_t bmp390_zero_altitude_at_current_position() {
+    portENTER_CRITICAL(&altitude_reference_lock);
+    if (!altitude_zero_valid) {
+        portEXIT_CRITICAL(&altitude_reference_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    altitude_zero_m = last_absolute_altitude_m;
+    portEXIT_CRITICAL(&altitude_reference_lock);
+    return ESP_OK;
+}
+
+// Read compensated data and report altitude relative to the calibrated launch
+// reference rather than the fixed standard-atmosphere datum.
+esp_err_t bmp390_get_data(double *temperature, double *pressure, double *altitude) {
+    double absolute_altitude = 0.0;
+    esp_err_t result = bmp390_get_absolute_data(
+        temperature, pressure, &absolute_altitude);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    portENTER_CRITICAL(&altitude_reference_lock);
+    if (!altitude_zero_valid) {
+        portEXIT_CRITICAL(&altitude_reference_lock);
+        ESP_LOGE(TAG, "Altitude requested before zero calibration");
+        return ESP_ERR_INVALID_STATE;
+    }
+    last_absolute_altitude_m = absolute_altitude;
+    const double zero = altitude_zero_m;
+    portEXIT_CRITICAL(&altitude_reference_lock);
+
+    *altitude = absolute_altitude - zero;
     return ESP_OK;
 }

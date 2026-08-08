@@ -7,6 +7,7 @@
 #include "globalvars.hpp"
 #include "comms/comm.h"
 #include "motor_init.hpp"
+#include "i2c/bmp390.hpp"
 #include <cstring>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -21,6 +22,21 @@ static uint8_t receiver_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; //Broadcas
 static std::atomic<bool> send_pending(false);
 static std::atomic<uint32_t> send_success_count(0);
 static std::atomic<uint32_t> send_fail_count(0);
+
+static bool reset_flight_reference(const char *reason) {
+    esp_err_t baro_result = bmp390_zero_altitude_at_current_position();
+    if (baro_result != ESP_OK) {
+        ESP_LOGE(TAG, "%s rejected: barometer zero unavailable (%s)",
+                 reason, esp_err_to_name(baro_result));
+        return false;
+    }
+
+    const uint32_t generation = capture_flight_reference_and_request_reset();
+    ESP_LOGW(TAG,
+             "%s: captured current attitude/altitude reference and requested flight-state reset #%lu",
+             reason, static_cast<unsigned long>(generation));
+    return true;
+}
 
 //callback function for send status
 void on_data_sent(const uint8_t* mac_addr, esp_now_send_status_t status) {
@@ -45,22 +61,29 @@ void esp_now_cmd_handler(const uint8_t *data, size_t len, const uint8_t *src_mac
                 ESP_LOGE(TAG,
                          "ARM rejected: commanded power must be zero (currently %u%%)",
                          motor_power_percent.load());
-            } else {
+            } else if (reset_flight_reference("ARM")) {
                 ESP_LOGW(TAG, "ARM COMMAND RECEIVED at zero power!");
                 estop_triggered = false;
             }
         } else if (cmd->command == 2) { //ZERO_IMU
-            ESP_LOGW(TAG, "ZERO IMU COMMAND RECEIVED!");
-            portENTER_CRITICAL(&global_spinlock);
-            latest_velocity = {0.0, 0.0, 0.0};
-            latest_position = {0.0, 0.0, 0.0};
-            portEXIT_CRITICAL(&global_spinlock);
+            if (!estop_triggered.load()) {
+                ESP_LOGE(TAG, "ZERO_IMU rejected while armed; ESTOP first");
+            } else {
+                reset_flight_reference("ZERO_IMU");
+            }
         } else if (cmd->command == 5) { //SET_PIN
             ESP_LOGW(TAG, "SET_PIN COMMAND RECEIVED! Motor %d -> GPIO %d", cmd->arg1, cmd->arg2);
             request_motor_pin_change(cmd->arg1, (gpio_num_t)cmd->arg2);
         } else if (cmd->command == 6) { //SET_POWER
+#if GIMBAL_ATTITUDE_MAPPING_TEST_MODE
+            motor_power_percent = 0;
+            ESP_LOGW(TAG,
+                     "SET_POWER %d%% ignored: gimbal attitude mapping test locks both motors at 0%%",
+                     cmd->arg1);
+#else
             ESP_LOGW(TAG, "SET_POWER COMMAND RECEIVED! Power -> %d%%", cmd->arg1);
             motor_power_percent = cmd->arg1;
+#endif
         }
     }
 }

@@ -2,12 +2,22 @@
 #define GLOBALVARS_HPP
 
 #include <atomic>
+#include <cstdint>
 #include "esp_log.h"
 #include <vector>
 #include <BNO08xGlobalTypes.hpp>
 #include <freertos/FreeRTOS.h>
 
 // Global variables
+// Physical TVC servo calibration in degrees. Controller gimbal outputs remain
+// zero-centred radians and are converted only by the servo actuator task.
+extern const float servo_midpoint_1_deg;
+extern const float servo_midpoint_2_deg;
+extern const float servo_direction_1;
+extern const float servo_direction_2;
+extern const float servo_max_deflection_1_deg;
+extern const float servo_max_deflection_2_deg;
+
 extern portMUX_TYPE global_spinlock;
 extern bno08x_euler_angle_t latest_euler_data;
 extern bno08x_gyro_t latest_ang_velocity_data;
@@ -63,6 +73,18 @@ typedef struct {
 } u_hov_t;
 
 extern u_hov_t U_hov;
+
+// Attitude held by the attitude-only controller. A ZERO_IMU command or a
+// successful ARM captures the current IMU orientation as the zero-error pose.
+typedef struct {
+    float roll;
+    float pitch;
+    float yaw;
+} attitude_reference_t;
+
+extern attitude_reference_t attitude_reference;
+extern std::atomic<uint32_t> flight_state_reset_generation;
+uint32_t capture_flight_reference_and_request_reset();
 
 extern std::atomic<bool> estop_triggered;
 extern std::atomic<bool> servo_testing_mode;
