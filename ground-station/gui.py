@@ -204,7 +204,9 @@ class GroundStationUI:
 
         tb.Label(pin_cfg_frame, text="GPIO:", font=("Helvetica", 11)).pack(side=LEFT, padx=(5, 4))
         self.motor_pin_var = tk.StringVar(value="18")
-        tb.Combobox(pin_cfg_frame, textvariable=self.motor_pin_var, values=[str(i) for i in range(40)], width=7).pack(side=LEFT, padx=(0, 10))
+        # Only offer pins the lander accepts for DShot.
+        valid_pins = [str(i) for i in range(34) if i not in (0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15)]
+        tb.Combobox(pin_cfg_frame, textvariable=self.motor_pin_var, values=valid_pins, width=7).pack(side=LEFT, padx=(0, 10))
 
         tb.Button(pin_cfg_frame, text="Set Motor Pin", command=self.send_set_pin, bootstyle=INFO).pack(side=LEFT, padx=8)
 

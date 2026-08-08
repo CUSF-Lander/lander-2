@@ -38,6 +38,24 @@ static uint16_t power_percent_to_throttle(uint8_t power_percent)
     return MIN_THROTTLE + (uint16_t)((power_percent * (MAX_THROTTLE - MIN_THROTTLE)) / 100);
 }
 
+// Reject pins unsafe for DShot before tearing down the old pin: 34-39
+// (input-only), 6-11 (flash), 0/12/15 (strapping), 1/3 (UART0), 2 (sensor power).
+static bool is_valid_dshot_pin(gpio_num_t pin)
+{
+    const int p = (int)pin;
+
+    if (p < 0 || p > 33) {
+        ESP_LOGE(TAG, "Invalid DShot GPIO %d (valid: 0-33, output-capable)", p);
+        return false;
+    }
+    if ((p >= 6 && p <= 11) || p == 0 || p == 1 || p == 2 || p == 3 || p == 12 || p == 15) {
+        ESP_LOGE(TAG, "Refusing DShot GPIO %d: reserved (flash, strapping, UART0 or sensor power)", p);
+        return false;
+    }
+
+    return true;
+}
+
 void reinit_motor_pin(uint8_t motor_idx, gpio_num_t new_pin) {
     ESP_LOGW(TAG, "Reinitializing motor %d to GPIO %d", motor_idx, new_pin);
     DShotRMT *target = nullptr;
@@ -51,6 +69,12 @@ void reinit_motor_pin(uint8_t motor_idx, gpio_num_t new_pin) {
     }
 
     if (target == nullptr) {
+        return;
+    }
+
+    if (!is_valid_dshot_pin(new_pin)) {
+        ESP_LOGE(TAG, "Ignoring SET_PIN for motor %d: GPIO %d is not usable for DShot",
+                 motor_idx, (int)new_pin);
         return;
     }
 
@@ -200,6 +224,11 @@ void init_2_motors(void* pvParameters)
     while (true) {
         motor_pin_change_request_t request;
         while (motor_pin_change_queue != nullptr && xQueueReceive(motor_pin_change_queue, &request, 0) == pdTRUE) {
+            if (!estop_triggered.load()) {
+                // Pin changes re-arm an ESC (~5 s) and block this task: only while ESTOP'd.
+                ESP_LOGW(TAG, "Rejecting SET_PIN for motor %d while motors are armed", request.motor_idx);
+                continue;
+            }
             reinit_motor_pin(request.motor_idx, request.new_pin);
         }
 

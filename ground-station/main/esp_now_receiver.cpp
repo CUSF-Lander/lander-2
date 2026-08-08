@@ -219,7 +219,7 @@ void esp_now_send_estop(void)
         return;
     }
     
-    esp_now_cmd_t cmd; cmd.type = 0x05;
+    esp_now_cmd_t cmd = {}; cmd.type = 0x05;
     cmd.command = 1;
     
     esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
@@ -241,7 +241,7 @@ void esp_now_send_zero_imu(void)
         return;
     }
     
-    esp_now_cmd_t cmd; cmd.type = 0x05;
+    esp_now_cmd_t cmd = {}; cmd.type = 0x05;
     cmd.command = 2;
     
     esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
@@ -263,7 +263,7 @@ void esp_now_send_arm(void)
         return;
     }
     
-    esp_now_cmd_t cmd; cmd.type = 0x05;
+    esp_now_cmd_t cmd = {}; cmd.type = 0x05;
     cmd.command = 4;
     
     esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
@@ -281,7 +281,7 @@ void esp_now_send_set_pin(uint8_t motor_idx, uint8_t pin)
         return;
     }
     
-    esp_now_cmd_t cmd; 
+    esp_now_cmd_t cmd = {}; 
     cmd.type = 0x05;
     cmd.command = 5;
     cmd.arg1 = motor_idx;
@@ -302,7 +302,7 @@ void esp_now_send_set_power(uint8_t power_percent)
         return;
     }
 
-    esp_now_cmd_t cmd;
+    esp_now_cmd_t cmd = {};
     cmd.type = 0x05;
     cmd.command = 6;
     cmd.arg1 = power_percent;
@@ -322,7 +322,7 @@ void esp_now_send_heartbeat(void)
         return; //suppress log to avoid spamming
     }
 
-    esp_now_cmd_t cmd;
+    esp_now_cmd_t cmd = {};
     cmd.type = 0x05;
     cmd.command = 3; //HEARTBEAT
 

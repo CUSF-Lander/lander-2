@@ -1,97 +1,60 @@
 # Lander
 
-Firmware for the lander and its ground station, targeting the **ESP32** on
-**ESP-IDF v6.0.2**. This repo is a VS Code multi-root workspace with two
-independent ESP-IDF projects:
+Flight firmware for a thrust-vector-controlled lander, targeting the **ESP32** on **ESP-IDF v6.0.2**. Two projects live in this repo:
 
-- [`lander/`](lander/) — flight controller (IMU, Kalman filter, DShot motors, ESP-NOW telemetry)
-- [`ground-station/`](ground-station/) — ESP-NOW receiver + [`gui.py`](ground-station/gui.py) desktop GUI
+- `lander/` — flight controller (IMU, Kalman filter, DShot motors, ESP-NOW telemetry)
+- `ground-station/` — ESP-NOW receiver + `gui.py` desktop GUI
 
-## First-time setup
+## Getting started
 
-1. **Clone with submodules** (the `esp32_BNO08x` IMU driver is a git submodule —
-   the build fails with "does not contain a CMakeLists.txt" if it's missing):
+Clone with submodules (the BNO08x IMU driver is a submodule, and the build fails without it):
 
-   ```bash
-   git clone --recurse-submodules <repo-url>
-   # or, in an existing clone:
-   git submodule update --init --recursive
-   ```
-
-2. **Install ESP-IDF v6.0.2.** Use the
-   [ESP-IDF Installation Manager (EIM)](https://dl.espressif.com/dl/esp-idf/)
-   or the VS Code ESP-IDF extension's "Configure" flow. The default install
-   location is `~/.espressif` (`%USERPROFILE%\.espressif` on Windows).
-
-3. **Open the workspace**, not a single folder: open
-   [`workspace.code-workspace`](workspace.code-workspace) in VS Code and install
-   the recommended extensions when prompted (ESP-IDF, clangd, Python).
-
-4. **Point the ESP-IDF extension at your local install.** This is per-machine
-   config and is intentionally **not** committed — set it locally via
-   Command Palette → "ESP-IDF: Configure ESP-IDF Extension". (See
-   [Per-machine config](#per-machine-config) below.)
-
-## Building
-
-### Linux
-
-**Via task (fastest):**
 ```bash
-Ctrl+Shift+B → "Build Select Project" → Lander or Ground Station
+git clone --recurse-submodules <repo-url>
+# in an existing clone:
+git submodule update --init --recursive
 ```
 
-**Via CLI:**
+## Build
+
+With Docker (recommended — no ESP-IDF install needed):
+
 ```bash
-source ~/.espressif/tools/activate_idf_v6.0.2.sh
-idf.py -C lander build                    # or: -C ground-station
+./scripts/build.sh            # Windows: .\scripts\build.ps1
 ```
 
-### macOS
+Or manually with `docker compose run --rm lander` / `docker compose run --rm ground-station`.
+Outputs: `lander/build/merged.bin` and `ground-station/build/merged.bin`.
 
-**Via task (fastest):**
-```bash
-Cmd+Shift+B → "Build Select Project" → Lander or Ground Station
-```
-(The task automatically sources `~/.espressif/tools/activate_idf_v6.0.2.sh`.)
+With a native ESP-IDF v6.0.2 install:
 
-**Via CLI:**
 ```bash
-source ~/.espressif/tools/activate_idf_v6.0.2.sh
 idf.py -C lander build
+idf.py -C ground-station build
 ```
 
-### Windows
+## Flash
 
-**Via ESP-IDF extension (recommended):**
-1. Open the workspace
-2. Command Palette (Ctrl+Shift+P) → "ESP-IDF: Pick a Workspace Folder"
-   → select `lander` or `ground-station`
-3. Click the **Build** button in the bottom status bar, or press Ctrl+E then B
-
-**Via CLI (PowerShell):**
-```powershell
-# Activate ESP-IDF v6.0.2 (installed via EIM or Windows installer)
-& "${env:USERPROFILE}\.espressif\tools\idf-cmd-tools\cmdline_tools\bin\idf.cmd" -C lander build
+```bash
+pip install esptool
+# Lander (ESP32):
+esptool.py --chip esp32 -p <PORT> --baud 460800 write_flash 0x0 lander/build/merged.bin
+# Ground station (ESP32-S3):
+esptool.py --chip esp32s3 -p <PORT> --baud 460800 write_flash 0x0 ground-station/build/merged.bin
 ```
 
-### All Platforms (Extension)
+`<PORT>` is `COM3` on Windows, `/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-*` on macOS.
 
-The ESP-IDF extension works on all platforms. Use the bottom-bar build/flash/monitor buttons:
-1. Command Palette → "ESP-IDF: Pick a Workspace Folder" (select `lander` or `ground-station`)
-2. Click **Build** (or **Flash**, **Monitor**)
+## Ground station GUI
 
-## Per-machine config
+```bash
+cd ground-station
+pip install -r requirements.txt
+python gui.py
+```
 
-Machine-specific VS Code settings are **not** tracked — `.vscode/settings.json`
-is git-ignored (see [.gitignore](.gitignore)). The ESP-IDF extension writes
-values like `idf.currentSetup`, `idf.port`, and absolute toolchain paths there;
-committing them breaks other contributors. Configure them locally through the
-extension and they'll stay on your machine.
+Select the serial port, click Connect, then ARM and drive the motors with the power slider.
 
-Shared, portable config **is** tracked: the workspace layout and build task in
-[`workspace.code-workspace`](workspace.code-workspace) and the recommended
-extensions in [`.vscode/extensions.json`](.vscode/extensions.json). The
-Microsoft **CMake Tools** extension is intentionally disabled for this
-workspace (it configures ESP-IDF projects with the host compiler and corrupts
-`build/`); build only through ESP-IDF.
+## VS Code
+
+Open `workspace.code-workspace` (not a single folder). Machine-specific settings in `.vscode/settings.json` are git-ignored; configure the ESP-IDF extension locally.
