@@ -336,7 +336,7 @@ void state_estimation(void *pvParameters)
 
         dspm_mult_f32(A.data, X,    tmp18, 18, 18, 1);  // A(18×18) * X(18×1)
         dspm_mult_f32(B.data, U,    bu18,  18,  4, 1);  // B(18×4)  * U(4×1)
-        for (int i = 0; i < 18; i++) Xpre[i] = tmp18[i] + bu18[i];
+        for (int i = 0; i < 18; i++) Xpre[i] = tmp18[i] + 0.5 * bu18[i];
 
         // -----------------------------------------------------------------
         // 7. Innovation: innov = Z - H*Xpre
