@@ -519,7 +519,10 @@ void hover_controller(void *pvParameters)
     // lqr_out = K_hov * [roll_err, pitch_err, yaw_err, gx_err, gy_err, gz_err, z_err, vz_err, int_z_err]'
     // Fly-test: gains intentionally zero — throttle is manual via the ground-
     // station slider. Fill in tuned LQR values before closed-loop hover.
-    static const float K_hov[4 * 9] = {0};
+    static const float K_hov[4 * 9] = {0.0000, 0.0000, -0.0000, -17.3205, -0.0000, 0.0000, -6.6814, -0.0000, 0.0000， 
+                                       0.0000, 0.0000, 17.3205, -0.0000, 0.0000, 6.6814, -0.0000, 0.0000, 0.0000， 
+                                       11.0254, 5.2077, -0.0000, 0.0000, 0.6235, -0.0000, 0.0000, 1.9492, 6.9881，
+                                       -0.0262, -0.0117, 0.0000, 0.0000, 0.0625, -0.0000, -0.0000, 0.1946, -0.0167};
 
     // SP_hover (9×1) — hover setpoint; all zeros (level attitude, hold position)
     // SP_hover[0] and [1] are augmented by U_pos each iteration.
@@ -594,7 +597,7 @@ void hover_controller(void *pvParameters)
         float alpha_2 = 0.0f;
         float omega_1 = 0.0f;
         float omega_2 = 0.0f;
-        float lambda  = 1.0f;
+        float lambda  = 1.0f; 
 
         // Guard against the zero-gain case (K_hov = 0 until LQR gains are
         // tuned): with no net force commanded the inverse mapping below would
