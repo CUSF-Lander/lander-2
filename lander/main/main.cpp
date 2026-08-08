@@ -90,7 +90,7 @@ void measure_datarate(void *pvParameters)
         //todo: error not handled when vector size is 0
         //ESP_LOGI(TAG, "Last Euler Angle: (x (roll): %.2f y (pitch): %.2f z (yaw): %.2f)[deg]", euler_data.back().x, euler_data.back().y, euler_data.back().z);
         //ESP_LOGI(TAG, "Linear Accel: (x: %.2f y: %.2f z: %.2f)[m/s^2]", lin_accel_data.back().x, lin_accel_data.back().y, lin_accel_data.back().z);
-        vTaskDelay(pdMS_TO_TICKS(50)); // Delay for 500ms
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
@@ -212,9 +212,19 @@ void state_estimation(void *pvParameters)
 
     // GPS freshness tracking
     static float last_gps[3] = {0.0f, 0.0f, 0.0f};
+    uint32_t handled_reset_generation = flight_state_reset_generation.load();
 
     while (1)
     {
+        const uint32_t requested_reset = flight_state_reset_generation.load();
+        if (requested_reset != handled_reset_generation) {
+            memset(X, 0, sizeof(X));
+            memset(last_gps, 0, sizeof(last_gps));
+            handled_reset_generation = requested_reset;
+            ESP_LOGI(TAG, "State estimator reset #%lu applied",
+                     static_cast<unsigned long>(requested_reset));
+        }
+
         // -----------------------------------------------------------------
         // 1. Read sensor data under spinlock
         // -----------------------------------------------------------------
@@ -243,16 +253,20 @@ void state_estimation(void *pvParameters)
         }
 
         // -----------------------------------------------------------------
-        // 3. Build control input U = [a1, a2, wt1, wt2]
-        //    Fly-test: K_hov = 0, so U_hov.omega = 0 while motors run from
-        //    motor_power_percent (GS slider). Revisit when hover control is on.
+        // 3. Build control input U = [a1, a2, wt1, wt2]. In the first tethered
+        //    attitude-only mode the gimbal commands are real actuator inputs,
+        //    but no calibrated DShot-percent-to-motor-speed mapping exists.
+        //    Keep wt1/wt2 at zero rather than injecting the controller's
+        //    unapplied omega requests into the process model.
         // -----------------------------------------------------------------
         float U[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         portENTER_CRITICAL(&global_spinlock);
         U[0] = U_hov.alpha1;  // gimbal1 angle [rad]
         U[1] = U_hov.alpha2;  // gimbal2 angle [rad]
+#if !MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
         U[2] = U_hov.omega1;  // motor1 speed  [rad/s]
         U[3] = U_hov.omega2;  // motor2 speed  [rad/s]
+#endif
         portEXIT_CRITICAL(&global_spinlock);
 
         // -----------------------------------------------------------------
@@ -409,9 +423,23 @@ void position_controller(void *pvParameters)
     // Integral accumulators (persist across iterations)
     static float error_integral_x = 0.0f;
     static float error_integral_y = 0.0f;
+    uint32_t handled_reset_generation = flight_state_reset_generation.load();
 
     while (1)
     {
+        const uint32_t requested_reset = flight_state_reset_generation.load();
+        if (estop_triggered.load()
+            || requested_reset != handled_reset_generation) {
+            error_integral_x = 0.0f;
+            error_integral_y = 0.0f;
+            portENTER_CRITICAL(&global_spinlock);
+            U_pos = {0.0f, 0.0f};
+            portEXIT_CRITICAL(&global_spinlock);
+            handled_reset_generation = requested_reset;
+            vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
+            continue;
+        }
+
         // -----------------------------------------------------------------
         // 1. Read Kalman filter outputs under spinlock
         // -----------------------------------------------------------------
@@ -503,36 +531,65 @@ void position_controller(void *pvParameters)
 void hover_controller(void *pvParameters)
 {
     constexpr uint32_t PERIOD_MS             = 20;      // 50 Hz
+#if !MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
     constexpr float    CONTROL_LOOP_INTERVAL = 0.02f;   // [s]
+#endif
 
     constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
 
-    // Actuation mapping constants
+    // Actuation mapping constants used by the normal hover controller. The
+    // temporary 1:1 gimbal mapping test bypasses this force conversion.
+#if !GIMBAL_ATTITUDE_MAPPING_TEST_MODE
     constexpr float KT_ACT = 0.021f;  // thrust coefficient [N/(rad/s)²]
     constexpr float C_ARM  = 0.1f;    // gimbal moment arm [m] — matches KF ARM / David's Simulink a = 0.1
+#endif
 
-    // Anti-windup throttle threshold — PLACEHOLDER: fill in before use
+    // Anti-windup throttle threshold — PLACEHOLDER for the future
+    // closed-loop altitude/thrust mode.
+#if !MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
     constexpr float MAX_THROTTLE   = 0.0f;  // maximum throttle value
     constexpr float DSHOT_THROTTLE = 0.0f;  // current throttle PLACEHOLDER
+#endif
 
     // K_hov (4×9) — LQR gain matrix, row-major
     // lqr_out = K_hov * [roll_err, pitch_err, yaw_err, gx_err, gy_err, gz_err, z_err, vz_err, int_z_err]'
-    // Fly-test: gains intentionally zero — throttle is manual via the ground-
-    // station slider. Fill in tuned LQR values before closed-loop hover.
-    static const float K_hov[4 * 9] = {0.0000, 0.0000, -0.0000, -17.3205, -0.0000, 0.0000, -6.6814, -0.0000, 0.0000， 
-                                       0.0000, 0.0000, 17.3205, -0.0000, 0.0000, 6.6814, -0.0000, 0.0000, 0.0000， 
-                                       11.0254, 5.2077, -0.0000, 0.0000, 0.6235, -0.0000, 0.0000, 1.9492, 6.9881，
-                                       -0.0262, -0.0117, 0.0000, 0.0000, 0.0625, -0.0000, -0.0000, 0.1946, -0.0167};
+    // Tuned hover gains. Each row produces one of [F1, F2, F3, Mz].
+#if !GIMBAL_ATTITUDE_MAPPING_TEST_MODE
+    static const float K_hov[4 * 9] = {
+         0.0000f,  0.0000f, -0.0000f, -17.3205f, -0.0000f,  0.0000f, -6.6814f, -0.0000f,  0.0000f,
+         0.0000f,  0.0000f, 17.3205f,  -0.0000f,  0.0000f,  6.6814f, -0.0000f,  0.0000f,  0.0000f,
+        11.0254f,  5.2077f, -0.0000f,   0.0000f,  0.6235f, -0.0000f,  0.0000f,  1.9492f,  6.9881f,
+        -0.0262f, -0.0117f,  0.0000f,   0.0000f,  0.0625f, -0.0000f, -0.0000f,  0.1946f, -0.0167f,
+    };
+#endif
 
     // SP_hover (9×1) — hover setpoint; all zeros (level attitude, hold position)
     // SP_hover[0] and [1] are augmented by U_pos each iteration.
     static const float SP_hover[9] = {0};
 
-    // Altitude integral accumulator
+    // Altitude integral accumulator for the future closed-loop thrust mode.
+#if !MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
     static float error_integral_z = 0.0f;
+#endif
+    uint32_t handled_reset_generation = flight_state_reset_generation.load();
+    int64_t last_control_log_us = 0;
 
     while (1)
     {
+        const uint32_t requested_reset = flight_state_reset_generation.load();
+        if (estop_triggered.load()
+            || requested_reset != handled_reset_generation) {
+#if !MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
+            error_integral_z = 0.0f;
+#endif
+            portENTER_CRITICAL(&global_spinlock);
+            U_hov = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+            portEXIT_CRITICAL(&global_spinlock);
+            handled_reset_generation = requested_reset;
+            vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
+            continue;
+        }
+
         // -----------------------------------------------------------------
         // 1. Read sensor data under spinlock
         // -----------------------------------------------------------------
@@ -545,8 +602,11 @@ void hover_controller(void *pvParameters)
         float gz    = static_cast<float>(latest_ang_velocity_data.z);
         float z     = static_cast<float>(latest_position.z);
         float vz    = static_cast<float>(latest_velocity.z);
+#if !GIMBAL_ATTITUDE_MAPPING_TEST_MODE && !MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
         float upos_roll  = U_pos.roll;
         float upos_pitch = U_pos.pitch;
+#endif
+        attitude_reference_t reference = attitude_reference;
         portEXIT_CRITICAL(&global_spinlock);
 
         // -----------------------------------------------------------------
@@ -554,8 +614,18 @@ void hover_controller(void *pvParameters)
         // -----------------------------------------------------------------
         float ref[9];
         for (int i = 0; i < 9; i++) ref[i] = SP_hover[i];
-        ref[0] += upos_roll;   // desired roll  [rad]
-        ref[1] += upos_pitch;  // desired pitch [rad]
+#if GIMBAL_ATTITUDE_MAPPING_TEST_MODE || MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
+        // The mapping test and first tethered-flight mode both deliberately
+        // exclude horizontal-position commands. K_pos remains zero, and this
+        // explicit bypass also prevents a failed estimator's NaN from leaking
+        // through IEEE-754 zero-matrix multiplication into the attitude loop.
+        ref[0] += reference.roll;                 // desired roll  [rad]
+        ref[1] += reference.pitch;                // desired pitch [rad]
+#else
+        ref[0] += reference.roll + upos_roll;     // desired roll  [rad]
+        ref[1] += reference.pitch + upos_pitch;   // desired pitch [rad]
+#endif
+        ref[2] += reference.yaw;                  // desired yaw   [rad]
 
         // -----------------------------------------------------------------
         // 3. Build state and compute error = ref - X
@@ -567,16 +637,43 @@ void hover_controller(void *pvParameters)
         // Wrap yaw error
         if (error[2] > static_cast<float>(M_PI))
             error[2] -= 2.0f * static_cast<float>(M_PI);
+        else if (error[2] < -static_cast<float>(M_PI))
+            error[2] += 2.0f * static_cast<float>(M_PI);
 
         // -----------------------------------------------------------------
-        // 4. Altitude integral with anti-windup
+        // 4. Altitude integral with anti-windup. The first tethered-flight
+        //    mode is manual-throttle/attitude-only, so altitude states are
+        //    deliberately removed from the actuator command.
         // -----------------------------------------------------------------
+#if MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
+        error[6] = 0.0f;
+        error[7] = 0.0f;
+        error[8] = 0.0f;
+#else
         float error_z = error[6];
         if (DSHOT_THROTTLE < MAX_THROTTLE || error_z < 0.0f) {
             error_integral_z += error_z * CONTROL_LOOP_INTERVAL;
         }
         error[8] = error_integral_z;
+#endif
 
+        float alpha_1 = 0.0f;
+        float alpha_2 = 0.0f;
+        float omega_1 = 0.0f;
+        float omega_2 = 0.0f;
+        float lambda  = 1.0f;
+
+#if GIMBAL_ATTITUDE_MAPPING_TEST_MODE
+        // Exact 1:1 direction test using the small-angle vehicle model:
+        //   +alpha1 creates -roll acceleration
+        //   +alpha2 creates -pitch acceleration
+        // Therefore a positive displacement from the captured attitude needs
+        // an equal positive gimbal angle to create a restoring acceleration.
+        // Yaw is observable in the log but is not controllable by either of
+        // the two gimbal axes; normal flight uses differential motor torque.
+        alpha_1 = -error[0]; // measured roll  - captured roll
+        alpha_2 = -error[1]; // measured pitch - captured pitch
+#else
         // -----------------------------------------------------------------
         // 5. LQR: lqr_out (4×1) = K_hov (4×9) * error (9×1)
         //    lqr_out = [F1, F2, F3, Mz]
@@ -593,12 +690,6 @@ void hover_controller(void *pvParameters)
         // 6. Actuation mapping: [F1, F2, F3, Mz] → [alpha1, alpha2, omega1, omega2, lambda]
         // -----------------------------------------------------------------
         float F_norm  = sqrtf(F1*F1 + F2*F2 + F3*F3);
-        float alpha_1 = 0.0f;
-        float alpha_2 = 0.0f;
-        float omega_1 = 0.0f;
-        float omega_2 = 0.0f;
-        float lambda  = 1.0f; 
-
         // Guard against the zero-gain case (K_hov = 0 until LQR gains are
         // tuned): with no net force commanded the inverse mapping below would
         // divide 0/0 and produce NaNs that would poison the Kalman filter.
@@ -615,6 +706,23 @@ void hover_controller(void *pvParameters)
             float F_2norm = lambda * F_norm;
             omega_2 = sqrtf(fabsf(F_2norm) / KT_ACT);
         }
+#endif
+
+#if MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
+        // Motor thrust is deliberately commanded by the ground station in
+        // this mode. Do not publish unrealized motor-speed requests into the
+        // estimator or imply that altitude control is active.
+        omega_1 = 0.0f;
+        omega_2 = 0.0f;
+#endif
+
+        // Publish the deflection that can actually reach the servos, rather
+        // than allowing the estimator to consume an unclamped request while
+        // the PCA9685 actuator silently applies a smaller angle.
+        const float servo1_limit_rad = servo_max_deflection_1_deg * deg2rad;
+        const float servo2_limit_rad = servo_max_deflection_2_deg * deg2rad;
+        alpha_1 = limit_f(alpha_1, -servo1_limit_rad, servo1_limit_rad);
+        alpha_2 = limit_f(alpha_2, -servo2_limit_rad, servo2_limit_rad);
 
         // -----------------------------------------------------------------
         // 7. Publish actuation output
@@ -626,6 +734,36 @@ void hover_controller(void *pvParameters)
         U_hov.omega2 = omega_2;
         U_hov.lambda = lambda;
         portEXIT_CRITICAL(&global_spinlock);
+
+        const int64_t now_us = esp_timer_get_time();
+        if ((now_us - last_control_log_us) >= 500000) {
+            constexpr float RAD_TO_DEG = 180.0f / static_cast<float>(M_PI);
+            const float alpha1_deg = alpha_1 * RAD_TO_DEG;
+            const float alpha2_deg = alpha_2 * RAD_TO_DEG;
+#if GIMBAL_ATTITUDE_MAPPING_TEST_MODE
+            ESP_LOGI(TAG,
+                     "Gimbal map test: displacement roll=%.2f pitch=%.2f yaw=%.2f deg; gimbal1=%.2f gimbal2=%.2f deg; channel0=%.2f channel7=%.2f deg; motors=0%%",
+                     -error[0] * RAD_TO_DEG,
+                     -error[1] * RAD_TO_DEG,
+                     -error[2] * RAD_TO_DEG,
+                     alpha1_deg,
+                     alpha2_deg,
+                     servo_midpoint_1_deg + servo_direction_1 * alpha1_deg,
+                     servo_midpoint_2_deg + servo_direction_2 * alpha2_deg);
+#else
+            ESP_LOGI(TAG,
+                     "Attitude control: error roll=%.2f pitch=%.2f yaw=%.2f deg; gimbal1=%.2f gimbal2=%.2f deg; channel0=%.2f channel7=%.2f deg; manual throttle=%u%%",
+                     error[0] * RAD_TO_DEG,
+                     error[1] * RAD_TO_DEG,
+                     error[2] * RAD_TO_DEG,
+                     alpha1_deg,
+                     alpha2_deg,
+                     servo_midpoint_1_deg + servo_direction_1 * alpha1_deg,
+                     servo_midpoint_2_deg + servo_direction_2 * alpha2_deg,
+                     motor_power_percent.load());
+#endif
+            last_control_log_us = now_us;
+        }
 
         vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
     }
@@ -802,8 +940,45 @@ extern "C" void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 #elif MOTOR_WIRING_TEST_MODE
-    ESP_LOGW(TAG, "MOTOR_WIRING_TEST_MODE enabled: starting only constant-throttle motor wiring test");
+    ESP_LOGW(TAG, "MOTOR_WIRING_TEST_MODE enabled: starting combined motor/servo bench test");
     ESP_LOGW(TAG, "IMU, GPS, ESP-NOW, BMP390, and control tasks are bypassed");
+
+    // Initialize the FeatherWing independently because normal startup is
+    // bypassed in this isolated test mode.
+    gpio_reset_pin(GPIO_NUM_2);
+    gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_2, 1);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    esp_err_t i2c_result = i2c_master_init();
+    if (i2c_result != ESP_OK) {
+        ESP_LOGE(TAG, "Motor/servo test I2C initialization failed: %s",
+                 esp_err_to_name(i2c_result));
+        return;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    esp_err_t pca_result = pca9685_init();
+    if (pca_result != ESP_OK) {
+        ESP_LOGE(TAG, "Motor/servo test PCA9685 initialization failed: %s",
+                 esp_err_to_name(pca_result));
+        return;
+    }
+
+    // Centre the gimbal before beginning the ESC's five-second zero-throttle
+    // arming period. A zero deflection maps to the configured 110/80 degree
+    // physical servo midpoints.
+    esp_err_t servo_result = tvc_servos_set_deflection_rad(0.0f, 0.0f);
+    if (servo_result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to centre TVC servos before motor arming: %s",
+                 esp_err_to_name(servo_result));
+        tvc_servo_outputs_disable();
+        return;
+    }
+    ESP_LOGI(TAG, "TVC servos centred at %.1f and %.1f degrees",
+             servo_midpoint_1_deg, servo_midpoint_2_deg);
+    vTaskDelay(pdMS_TO_TICKS(MOTOR_WIRING_TEST_SERVO_CENTER_SETTLE_MS));
 
     estop_triggered = false;
     last_gs_msg_time = 0;
@@ -811,15 +986,95 @@ extern "C" void app_main(void)
     BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "motor_test", 4096, NULL, 3, NULL, APP_CPU_NUM);
     if (motor_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create motor wiring test task!");
-    } else {
-        ESP_LOGI(TAG, "Motor wiring test task started.");
+        estop_triggered = true;
+        tvc_servo_outputs_disable();
+        return;
+    }
+    ESP_LOGI(TAG, "Motor wiring test task started; waiting for first successful 5%% frame");
+
+    const int64_t throttle_deadline_us =
+        esp_timer_get_time() + (MOTOR_ARM_ZERO_HOLD_MS + 5000LL) * 1000LL;
+    while (!motor_wiring_test_throttle_active()
+           && esp_timer_get_time() < throttle_deadline_us) {
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    while (1)
-    {
-        vTaskDelay(pdMS_TO_TICKS(500));
+    if (!motor_wiring_test_throttle_active()) {
+        ESP_LOGE(TAG, "Motor test did not reach 5%% throttle before timeout; aborting");
+        abort_motor_wiring_test();
+        estop_triggered = true;
+        tvc_servo_outputs_disable();
+        while (true) vTaskDelay(pdMS_TO_TICKS(1000));
     }
+
+    ESP_LOGW(TAG,
+             "Both motors running at %d%%; starting servo sweeps of +/-%d degrees",
+             MOTOR_WIRING_TEST_THROTTLE_PERCENT,
+             MOTOR_WIRING_TEST_SERVO_AMPLITUDE_DEG);
+    ESP_LOGI(TAG,
+             "Servo 1 period: %.1f s; servo 2 period: %.1f s; combined pattern: 70 s",
+             MOTOR_WIRING_TEST_SERVO_1_PERIOD_MS / 1000.0f,
+             MOTOR_WIRING_TEST_SERVO_2_PERIOD_MS / 1000.0f);
+
+    constexpr float DEG_TO_RAD = static_cast<float>(M_PI) / 180.0f;
+    constexpr float TWO_PI = 2.0f * static_cast<float>(M_PI);
+    constexpr float SERVO_1_PERIOD_S =
+        MOTOR_WIRING_TEST_SERVO_1_PERIOD_MS / 1000.0f;
+    constexpr float SERVO_2_PERIOD_S =
+        MOTOR_WIRING_TEST_SERVO_2_PERIOD_MS / 1000.0f;
+    const int64_t sweep_start_us = esp_timer_get_time();
+    int64_t last_log_us = sweep_start_us - 1000000LL;
+
+    while (motor_wiring_test_throttle_active()) {
+        const int64_t now_us = esp_timer_get_time();
+        const float elapsed_s =
+            static_cast<float>(now_us - sweep_start_us) / 1000000.0f;
+        const float servo1_deflection_deg = MOTOR_WIRING_TEST_SERVO_AMPLITUDE_DEG
+            * sinf(TWO_PI * elapsed_s / SERVO_1_PERIOD_S);
+        const float servo2_deflection_deg = MOTOR_WIRING_TEST_SERVO_AMPLITUDE_DEG
+            * sinf(TWO_PI * elapsed_s / SERVO_2_PERIOD_S);
+
+        servo_result = tvc_servos_set_deflection_rad(
+            servo1_deflection_deg * DEG_TO_RAD,
+            servo2_deflection_deg * DEG_TO_RAD);
+        if (servo_result != ESP_OK) {
+            ESP_LOGE(TAG, "Servo sweep failed: %s; aborting motor test",
+                     esp_err_to_name(servo_result));
+            abort_motor_wiring_test();
+            break;
+        }
+
+        if ((now_us - last_log_us) >= 1000000LL) {
+            ESP_LOGI(TAG,
+                     "Bench sweep: servo1=%.1f deg, servo2=%.1f deg",
+                     servo_midpoint_1_deg
+                         + servo_direction_1 * servo1_deflection_deg,
+                     servo_midpoint_2_deg
+                         + servo_direction_2 * servo2_deflection_deg);
+            last_log_us = now_us;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(20)); // 50 Hz servo update
+    }
+
+    estop_triggered = true;
+    abort_motor_wiring_test();
+    tvc_servo_outputs_disable();
+    ESP_LOGE(TAG, "Combined motor/servo bench test aborted; motor zeroed and servos disabled");
+    while (true) vTaskDelay(pdMS_TO_TICKS(1000));
 #else
+#if MANUAL_THROTTLE_ATTITUDE_ONLY_MODE
+#if GIMBAL_ATTITUDE_MAPPING_TEST_MODE
+    ESP_LOGW(TAG,
+             "Gimbal attitude mapping test: ARM captures neutral; roll->gimbal1 and pitch->gimbal2 at 1:1; motors locked at 0%%");
+#else
+    ESP_LOGW(TAG,
+             "Flight mode: manual ground-station throttle with closed-loop TVC attitude control");
+    ESP_LOGW(TAG,
+             "Altitude actuation, controller motor-speed output, and horizontal-position control are disabled");
+#endif
+#endif
+
     //enable power to the STEMMA QT connector (I2C power) early
     ESP_LOGI(TAG, "Enabling STEMMA QT power (GPIO 2)...");
     gpio_reset_pin(GPIO_NUM_2);
@@ -846,6 +1101,21 @@ extern "C" void app_main(void)
         return;
     }
 
+    // Normal startup begins ESTOP'd. Explicitly remove pulses from both TVC
+    // channels now so a separately powered PCA9685 cannot retain stale output
+    // while the remaining sensors and control tasks initialize.
+    esp_err_t servo1_off_result =
+        pca9685_set_channel_off(TVC_SERVO_1_CHANNEL);
+    esp_err_t servo2_off_result =
+        pca9685_set_channel_off(TVC_SERVO_2_CHANNEL);
+    if (servo1_off_result != ESP_OK || servo2_off_result != ESP_OK) {
+        ESP_LOGE(TAG,
+                 "Failed to disable TVC servos during startup (servo1: %s, servo2: %s)",
+                 esp_err_to_name(servo1_off_result),
+                 esp_err_to_name(servo2_off_result));
+        return;
+    }
+
     if (servo_testing_mode.load()) {
         ESP_LOGW(TAG, "servo_testing_mode=true. Entering blocking servo test loop before other init.");
         servo_test_via_serial_blocking();
@@ -855,7 +1125,20 @@ extern "C" void app_main(void)
         }
     }
 
-    bmp390_init();
+    esp_err_t bmp_result = bmp390_init();
+    if (bmp_result != ESP_OK) {
+        ESP_LOGE(TAG, "BMP390 initialization failed: %s",
+                 esp_err_to_name(bmp_result));
+        return;
+    }
+
+    ESP_LOGI(TAG, "Calibrating launch altitude; keep the vehicle stationary...");
+    bmp_result = bmp390_calibrate_altitude_zero(20, 50);
+    if (bmp_result != ESP_OK) {
+        ESP_LOGE(TAG, "Launch-altitude calibration failed: %s",
+                 esp_err_to_name(bmp_result));
+        return;
+    }
     init_espnow_sender();
 
     // Start UART for GPS and hook the correction callback
@@ -882,7 +1165,8 @@ extern "C" void app_main(void)
     // Launch state estimation task
     BaseType_t state_estimation_task = xTaskCreatePinnedToCore(state_estimation, "state estimation", 8192, NULL, 2, NULL, APP_CPU_NUM);
     if(state_estimation_task != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create state estimation task!");
+        ESP_LOGE(TAG, "Failed to create state estimation task; actuator startup aborted");
+        return;
     } else {
         ESP_LOGI(TAG, "State estimation task started.");
     }
@@ -890,7 +1174,8 @@ extern "C" void app_main(void)
     // Launch position controller task (LQR outer loop, 50 Hz)
     BaseType_t pos_ctrl_task = xTaskCreatePinnedToCore(position_controller, "pos_ctrl", 4096, NULL, 2, NULL, APP_CPU_NUM);
     if(pos_ctrl_task != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create position controller task!");
+        ESP_LOGE(TAG, "Failed to create position controller task; actuator startup aborted");
+        return;
     } else {
         ESP_LOGI(TAG, "Position controller task started.");
     }
@@ -898,10 +1183,24 @@ extern "C" void app_main(void)
     // Launch hover controller task (LQR inner loop, 50 Hz)
     BaseType_t hov_ctrl_task = xTaskCreatePinnedToCore(hover_controller, "hov_ctrl", 4096, NULL, 2, NULL, APP_CPU_NUM);
     if(hov_ctrl_task != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create hover controller task!");
+        ESP_LOGE(TAG, "Failed to create hover controller task; actuator startup aborted");
+        return;
     } else {
         ESP_LOGI(TAG, "Hover controller task started.");
     }
+
+    // Keep blocking PCA9685 writes out of the hover-control calculation. The
+    // actuator task reads U_hov, applies calibrated servo offsets/limits, and
+    // enables outputs only while software ESTOP is clear.
+    BaseType_t servo_actuation_task = xTaskCreatePinnedToCore(
+        tvc_servo_actuation_task, "tvc_servo_actuation", 4096,
+        NULL, 2, NULL, APP_CPU_NUM);
+    if (servo_actuation_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create TVC servo actuation task; halting startup");
+        return;
+    }
+    ESP_LOGI(TAG, "TVC servo actuation task started.");
+
     BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "initialize 2 motors", 4096, NULL, 3, NULL, APP_CPU_NUM);
     if(motor_task != pdPASS) {
         ESP_LOGE(TAG, "Failed to create motor task!");

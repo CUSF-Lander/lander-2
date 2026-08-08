@@ -1,9 +1,12 @@
+#include "servo.hpp"
 #include "driver/i2c.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "../config.hpp"
+#include "../globalvars.hpp"
+#include <cmath>
  
 static const char *TAG = "PCA9685";
  
@@ -132,6 +135,12 @@ esp_err_t pca9685_set_channel_off(uint8_t servo_num) {
  * @return esp_err_t ESP_OK on success, otherwise an error code.
  */
 esp_err_t pca9685_set_servo_angle(uint8_t servo_num, float angle) {
+    if (!std::isfinite(angle) || angle < 0.0f || angle > 180.0f) {
+        ESP_LOGE(TAG, "Invalid angle for servo %u: %.2f degrees",
+                 servo_num, angle);
+        return ESP_ERR_INVALID_ARG;
+    }
+
     // Tested empirically:
     // Start point is between 110-120
     // End point is between 540-550
@@ -146,6 +155,103 @@ esp_err_t pca9685_set_servo_angle(uint8_t servo_num, float angle) {
 
     // Set the PWM value for the servo
     return pca9685_set_pwm(servo_num, 0, pwm_value);
+}
+
+static float clamp_float(float value, float minimum, float maximum) {
+    if (value < minimum) return minimum;
+    if (value > maximum) return maximum;
+    return value;
+}
+
+esp_err_t tvc_servos_set_deflection_rad(float alpha1_rad, float alpha2_rad) {
+    if (!std::isfinite(alpha1_rad) || !std::isfinite(alpha2_rad)) {
+        ESP_LOGE(TAG, "Rejecting non-finite TVC command (alpha1=%.4f, alpha2=%.4f)",
+                 alpha1_rad, alpha2_rad);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    constexpr float RAD_TO_DEG = 180.0f / static_cast<float>(M_PI);
+
+    const float alpha1_deg = clamp_float(
+        alpha1_rad * RAD_TO_DEG,
+        -servo_max_deflection_1_deg,
+        servo_max_deflection_1_deg);
+    const float alpha2_deg = clamp_float(
+        alpha2_rad * RAD_TO_DEG,
+        -servo_max_deflection_2_deg,
+        servo_max_deflection_2_deg);
+
+    const float servo1_command_deg = clamp_float(
+        servo_midpoint_1_deg + servo_direction_1 * alpha1_deg, 0.0f, 180.0f);
+    const float servo2_command_deg = clamp_float(
+        servo_midpoint_2_deg + servo_direction_2 * alpha2_deg, 0.0f, 180.0f);
+
+    esp_err_t result = pca9685_set_servo_angle(
+        TVC_SERVO_1_CHANNEL, servo1_command_deg);
+    if (result != ESP_OK) return result;
+
+    return pca9685_set_servo_angle(
+        TVC_SERVO_2_CHANNEL, servo2_command_deg);
+}
+
+esp_err_t tvc_servo_outputs_disable() {
+    const esp_err_t result1 = pca9685_set_channel_off(TVC_SERVO_1_CHANNEL);
+    const esp_err_t result2 = pca9685_set_channel_off(TVC_SERVO_2_CHANNEL);
+    if (result1 != ESP_OK || result2 != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to disable TVC servo outputs (servo1: %s, servo2: %s)",
+                 esp_err_to_name(result1), esp_err_to_name(result2));
+        return result1 != ESP_OK ? result1 : result2;
+    }
+    return ESP_OK;
+}
+
+void tvc_servo_actuation_task(void *pvParameters) {
+    constexpr TickType_t UPDATE_INTERVAL = pdMS_TO_TICKS(20); // 50 Hz
+    bool outputs_disabled = false;
+
+    ESP_LOGI(TAG,
+             "TVC servo task ready: channel %d midpoint %.1f deg, channel %d midpoint %.1f deg",
+             TVC_SERVO_1_CHANNEL, servo_midpoint_1_deg,
+             TVC_SERVO_2_CHANNEL, servo_midpoint_2_deg);
+
+    while (true) {
+        if (estop_triggered.load()) {
+            if (!outputs_disabled) {
+                if (tvc_servo_outputs_disable() == ESP_OK) {
+                    outputs_disabled = true;
+                    ESP_LOGI(TAG, "TVC servo outputs disabled by ESTOP");
+                }
+            }
+            vTaskDelay(UPDATE_INTERVAL);
+            continue;
+        }
+
+        float alpha1_rad;
+        float alpha2_rad;
+        portENTER_CRITICAL(&global_spinlock);
+        alpha1_rad = U_hov.alpha1;
+        alpha2_rad = U_hov.alpha2;
+        portEXIT_CRITICAL(&global_spinlock);
+
+        const esp_err_t result =
+            tvc_servos_set_deflection_rad(alpha1_rad, alpha2_rad);
+        if (result != ESP_OK) {
+            ESP_LOGE(TAG, "TVC servo command failed: %s; latching ESTOP",
+                     esp_err_to_name(result));
+            motor_power_percent = 0;
+            estop_triggered = true;
+            outputs_disabled = (tvc_servo_outputs_disable() == ESP_OK);
+            vTaskDelay(UPDATE_INTERVAL);
+            continue;
+        }
+
+        if (outputs_disabled) {
+            ESP_LOGI(TAG, "TVC servo actuation enabled");
+            outputs_disabled = false;
+        }
+
+        vTaskDelay(UPDATE_INTERVAL);
+    }
 }
 
 esp_err_t pca9685_init(){

@@ -158,10 +158,10 @@ static void send_cb(const wifi_tx_info_t* tx_info, esp_now_send_status_t status)
     if (s_send_cb) {
         s_send_cb(mac_addr, status);
     }
-    ESP_LOGI(TAG, "TX status: %d to %02x:%02x:%02x:%02x:%02x:%02x",
-             (int)status,
-             mac_addr[0], mac_addr[1], mac_addr[2],
-             mac_addr[3], mac_addr[4], mac_addr[5]);
+
+    // This callback runs for every telemetry packet (currently 100 Hz).
+    // Per-packet logging overwhelms the terminal, so status is recorded by
+    // the registered callback and reported through its periodic statistics.
 }
 
 // ---------------------------------------------------------------------------

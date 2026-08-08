@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "globalvars.hpp"
+#include <atomic>
 
 // Include the DShot library
 #include "DShotRMT.h"
@@ -16,17 +17,33 @@ struct motor_pin_change_request_t {
 };
 
 static QueueHandle_t motor_pin_change_queue = nullptr;
+static std::atomic<bool> wiring_test_throttle_active{false};
+static std::atomic<bool> wiring_test_abort_requested{false};
+
+bool motor_wiring_test_throttle_active()
+{
+    return wiring_test_throttle_active.load();
+}
+
+void abort_motor_wiring_test()
+{
+    wiring_test_abort_requested = true;
+    wiring_test_throttle_active = false;
+}
 
 // DShot reserves values 0-47 for stop and special commands. Values 48-2047
 // represent the usable throttle range.
+#if !GIMBAL_ATTITUDE_MAPPING_TEST_MODE
 static constexpr uint16_t MIN_THROTTLE = 48;
 static constexpr uint16_t MAX_THROTTLE = 2047;
+#endif
 
 // Global ESC instances allow an ESTOP-gated ground-station command to move a
 // motor output to another safe GPIO during bench work.
 static DShotRMT global_esc1;
 static DShotRMT global_esc2;
 
+#if !GIMBAL_ATTITUDE_MAPPING_TEST_MODE
 static uint16_t power_percent_to_throttle(uint8_t power_percent)
 {
     // Zero is a distinct DShot stop command, not the bottom of the 48-2047
@@ -43,6 +60,7 @@ static uint16_t power_percent_to_throttle(uint8_t power_percent)
         + static_cast<uint16_t>(
             (power_percent * (MAX_THROTTLE - MIN_THROTTLE)) / 100);
 }
+#endif
 
 // Reject pins unsafe for DShot before tearing down the old pin: 34-39
 // (input-only), 6-11 (flash), 0/12/15 (strapping), 1/3 (UART0), 2 (sensor power).
@@ -159,6 +177,11 @@ static esp_err_t hold_both_zero_ms(uint32_t duration_ms)
 
 void init_2_motors(void* pvParameters)
 {
+#if MOTOR_WIRING_TEST_MODE
+    wiring_test_throttle_active = false;
+    wiring_test_abort_requested = false;
+#endif
+
     // Physical motor mapping for the current counter-rotating propeller stack:
     //   ESC 1 / GPIO 4  = bottom propeller
     //   ESC 2 / GPIO 25 = top propeller
@@ -246,6 +269,9 @@ void init_2_motors(void* pvParameters)
              "MOTOR_WIRING_TEST_MODE enabled: ignoring ground-station timeout and software ESTOP");
     ESP_LOGW(TAG, "Fixed bench-test throttle: %d%%",
              MOTOR_WIRING_TEST_THROTTLE_PERCENT);
+#elif GIMBAL_ATTITUDE_MAPPING_TEST_MODE
+    ESP_LOGW(TAG,
+             "GIMBAL_ATTITUDE_MAPPING_TEST_MODE enabled: both motors locked at 0%% throttle");
 #endif
 
     bool logged_first_throttle = false;
@@ -285,8 +311,21 @@ void init_2_motors(void* pvParameters)
 #endif
 
 #if MOTOR_WIRING_TEST_MODE
+        if (wiring_test_abort_requested.load()) {
+            global_esc1.sendThrottle(0);
+            global_esc2.sendThrottle(0);
+            wiring_test_throttle_active = false;
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
         const uint16_t throttle_value =
             power_percent_to_throttle(MOTOR_WIRING_TEST_THROTTLE_PERCENT);
+#elif GIMBAL_ATTITUDE_MAPPING_TEST_MODE
+        // This validation exercises only the IMU-to-gimbal direction. Keep
+        // sending valid zero-throttle frames so no ground-station command can
+        // accidentally introduce thrust during the hands-on tilt test.
+        const uint16_t throttle_value = 0;
 #else
         const uint16_t throttle_value =
             power_percent_to_throttle(motor_power_percent.load());
@@ -307,9 +346,17 @@ void init_2_motors(void* pvParameters)
             global_esc2.sendThrottle(0);
             motor_power_percent = 0;
             estop_triggered = true;
+#if MOTOR_WIRING_TEST_MODE
+            abort_motor_wiring_test();
+#endif
         }
 
         if (!logged_first_throttle) {
+#if MOTOR_WIRING_TEST_MODE
+            if (result1 == ESP_OK && result2 == ESP_OK) {
+                wiring_test_throttle_active = true;
+            }
+#endif
             ESP_LOGI(TAG, "Finished first throttle frame for both motors");
             logged_first_throttle = true;
         }
