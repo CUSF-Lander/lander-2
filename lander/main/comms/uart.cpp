@@ -8,6 +8,7 @@
 #include "Parser.h"
 #include "comm.h"
 #include "structs.h"
+#include "../globalvars.hpp"
 
 namespace Uart
 {
@@ -79,6 +80,11 @@ void rx_gngga_task(void *arg)
             ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
             ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
             parser.parse(data, rxBytes);
+            portENTER_CRITICAL(&global_spinlock);
+            latest_gps_position.x = parser.getGpsData().x;
+            latest_gps_position.y = parser.getGpsData().y;
+            latest_gps_position.z = parser.getGpsData().z;
+            portEXIT_CRITICAL(&global_spinlock);
             WIFI::send_gps_position(parser.getGpsData());
         }
     }

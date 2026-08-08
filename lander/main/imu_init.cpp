@@ -11,7 +11,7 @@ static const constexpr char* TAG = "IMU_INIT";
 void imu_init()
 {   
     ESP_LOGI(TAG, "imu_init: Instantiating BNO08x object...");
-    vTaskDelay(pdMS_TO_TICKS(100)); // Short delay before constructor
+    vTaskDelay(pdMS_TO_TICKS(100)); //short delay before constructor
     static BNO08x imu;
 
     ESP_LOGI(TAG, "imu_init: Starting IMU initialisation...");

@@ -22,8 +22,9 @@ int32_t euler_counter = 0; // Initialize counter to 0
 double temperature;
 double pressure;
 double altitude;
-//Default ESTOP to engaged on startup so the motors cannot spin before the
-//ground station link is established (commit f6094a7 accidentally reverted this).
+// ESTOP engaged on startup (safety default): motors stay at zero until the
+// ground station sends the ARM command (command 4).
 std::atomic<bool> estop_triggered{true};
 std::atomic<bool> servo_testing_mode{false};
 std::atomic<int64_t> last_gs_msg_time{0};
+std::atomic<uint8_t> motor_power_percent{10};

@@ -195,6 +195,40 @@ class GroundStationUI:
         self.canvas = FigureCanvasTkAgg(self.fig, master=graph_frame)
         self.canvas.get_tk_widget().pack(fill=BOTH, expand=True)
 
+        pin_cfg_frame = tb.Labelframe(self.root, text=" Motor Pin Override ", padding=10)
+        pin_cfg_frame.pack(fill=X, padx=15, pady=(10, 5))
+
+        tb.Label(pin_cfg_frame, text="Motor:", font=("Helvetica", 11)).pack(side=LEFT, padx=(5, 4))
+        self.motor_idx_var = tk.StringVar(value="1")
+        tb.Combobox(pin_cfg_frame, textvariable=self.motor_idx_var, values=["0", "1"], width=5, state="readonly").pack(side=LEFT, padx=(0, 10))
+
+        tb.Label(pin_cfg_frame, text="GPIO:", font=("Helvetica", 11)).pack(side=LEFT, padx=(5, 4))
+        self.motor_pin_var = tk.StringVar(value="18")
+        # Only offer pins the lander accepts for DShot.
+        valid_pins = [str(i) for i in range(34) if i not in (0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15)]
+        tb.Combobox(pin_cfg_frame, textvariable=self.motor_pin_var, values=valid_pins, width=7).pack(side=LEFT, padx=(0, 10))
+
+        tb.Button(pin_cfg_frame, text="Set Motor Pin", command=self.send_set_pin, bootstyle=INFO).pack(side=LEFT, padx=8)
+
+        power_frame = tb.Labelframe(self.root, text=" Motor Power ", padding=10)
+        power_frame.pack(fill=X, padx=15, pady=(0, 5))
+
+        self.power_percent_var = tk.IntVar(value=10)
+        self.power_label_var = tk.StringVar(value="Power: 10 %")
+
+        tb.Label(power_frame, textvariable=self.power_label_var, font=("Helvetica", 11)).pack(side=LEFT, padx=(5, 10))
+        self.power_scale = tb.Scale(
+            power_frame,
+            from_=0,
+            to=100,
+            orient=HORIZONTAL,
+            variable=self.power_percent_var,
+            command=self.on_power_change,
+            length=320,
+        )
+        self.power_scale.pack(side=LEFT, padx=(0, 10), fill=X, expand=True)
+        self.power_scale.bind("<ButtonRelease-1>", self.send_power)
+
         commands_frame = tb.Frame(self.root, padding=15)
         commands_frame.pack(fill=X)
         
@@ -209,7 +243,7 @@ class GroundStationUI:
         self.zero_imu_btn = tb.Button(commands_frame, text="ZERO IMU (CALIBRATE)", bootstyle=PRIMARY,
                                       command=self.send_zero_imu)
         self.zero_imu_btn.pack(side=RIGHT, fill=X, expand=True, ipady=15, padx=(10, 0))
-        
+
         status_frame = tb.Frame(self.root, padding=5)
         status_frame.pack(fill=X)
         
@@ -402,6 +436,40 @@ class GroundStationUI:
                 self.lbl_zero_imu_status.config(text="IMU Calibration: SENDING OVERRIDE", bootstyle=PRIMARY)
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to send ZERO IMU: {e}")
+        else:
+            messagebox.showwarning("Warning", "Not connected to serial port", parent=self.root)
+
+    def send_set_pin(self):
+        if self.serial_port and self.serial_port.is_open:
+            try:
+                idx = int(self.motor_idx_var.get())
+                pin = int(self.motor_pin_var.get())
+                cmd_str = f"SET_PIN {idx} {pin}\n"
+                self.serial_port.write(cmd_str.encode())
+                self.lbl_estop_status.config(text=f"Motor {idx} Pin: GPIO {pin} SENT", bootstyle=INFO)
+            except ValueError:
+                messagebox.showerror("Error", "Invalid Motor Index or Pin Number", parent=self.root)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send SET_PIN: {e}")
+        else:
+            messagebox.showwarning("Warning", "Not connected to serial port", parent=self.root)
+
+    def on_power_change(self, value):
+        try:
+            power = int(float(value))
+        except ValueError:
+            return
+        self.power_label_var.set(f"Power: {power} %")
+
+    def send_power(self, event=None):
+        if self.serial_port and self.serial_port.is_open:
+            try:
+                power = int(self.power_percent_var.get())
+                power = max(0, min(100, power))
+                self.serial_port.write(f"SET_POWER {power}\n".encode())
+                self.power_label_var.set(f"Power: {power} % SENT")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send SET_POWER: {e}")
         else:
             messagebox.showwarning("Warning", "Not connected to serial port", parent=self.root)
 

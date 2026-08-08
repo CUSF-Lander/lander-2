@@ -104,8 +104,11 @@ void measure_datarate(void *pvParameters)
 // Control input U (4x1): [a1 (gimbal1), a2 (gimbal2), wt1 (motor1), wt2 (motor2)]
 //
 // Measurement vector Z:
-//   without GPS (10x1): [roll,pitch,yaw, ax_body,ay_body,az_body, wx,wy,wz, baro_alt]
+//   without GPS (10x1): [roll,pitch,yaw, ax_world,ay_world,az_world, wx,wy,wz, baro_alt]
 //   with    GPS (13x1): same + [gps_x, gps_y, gps_z]
+//
+// Z[3..5] hold world-frame linear accel (BNO08x linear_accelerometer is
+// already gravity-free, matching H rows 3-5).
 //
 // H structure:
 //   H_imu (9×18)  — dynamic, linearised around current state (from update_kalman_matrices)
@@ -121,7 +124,7 @@ void state_estimation(void *pvParameters)
     constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
 
     // -------------------------------------------------------------------------
-    // Vehicle physical constants
+    // Vehicle physical constants — from David's Simulink model (07/08/2026)
     // -------------------------------------------------------------------------
     constexpr float KT   = 0.021f;   // thrust coefficient        [N/(rad/s)²]
     constexpr float KM   = 0.00105f;   // motor torque coefficient  [N·m/(rad/s)²]
@@ -241,13 +244,15 @@ void state_estimation(void *pvParameters)
 
         // -----------------------------------------------------------------
         // 3. Build control input U = [a1, a2, wt1, wt2]
+        //    Fly-test: K_hov = 0, so U_hov.omega = 0 while motors run from
+        //    motor_power_percent (GS slider). Revisit when hover control is on.
         // -----------------------------------------------------------------
         float U[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         portENTER_CRITICAL(&global_spinlock);
-        U[0] = U_hov.alpha1  //gimbal1_angle
-        U[1] = U_hov.alpha2  //gimbal2_angle
-        U[2] = U_hov.omega1  //motor1_speed
-        U[3] = U_hov.omega2  //motor2_speed
+        U[0] = U_hov.alpha1;  // gimbal1 angle [rad]
+        U[1] = U_hov.alpha2;  // gimbal2 angle [rad]
+        U[2] = U_hov.omega1;  // motor1 speed  [rad/s]
+        U[3] = U_hov.omega2;  // motor2 speed  [rad/s]
         portEXIT_CRITICAL(&global_spinlock);
 
         // -----------------------------------------------------------------
@@ -269,17 +274,15 @@ void state_estimation(void *pvParameters)
         // 5. Build measurement vector Z and select H / Kf
         // -----------------------------------------------------------------
         
-        //Create and transform IMU linear acceleration vectors from body to world frame
+        // Rotate body-frame linear accel to world frame (sensor euler angles).
         float Z_imu_acc_body[3] = {0};
         Z_imu_acc_body[0] = static_cast<float>(meas_lin_acc.x);   // ax body [m/s²]
         Z_imu_acc_body[1] = static_cast<float>(meas_lin_acc.y);   // ay body
         Z_imu_acc_body[2] = static_cast<float>(meas_lin_acc.z);   // az body
-        
-        //Note: Are directly using the sensor values, instead of the kalman filter estimates
-        //Probably fine, those measurements are more accurate. 
-        float p_rad = static_cast<float>(meas_euler.x) * deg2rad; //pitch
-        float q_rad = static_cast<float>(meas_euler.y) * deg2rad; //yaw 
-        float u_rad = static_cast<float>(meas_euler.z) * deg2rad; //roll
+
+        float p_rad = static_cast<float>(meas_euler.x) * deg2rad;  // roll
+        float q_rad = static_cast<float>(meas_euler.y) * deg2rad;  // pitch
+        float u_rad = static_cast<float>(meas_euler.z) * deg2rad;  // yaw
 
         float c_p = cosf(p_rad);
         float s_p = sinf(p_rad);
@@ -288,11 +291,11 @@ void state_estimation(void *pvParameters)
         float c_u = cosf(u_rad);
         float s_u = sinf(u_rad);
         
-        //R is the body to world transformation matrix
-        static const float R[3 * 3] = {
-            c_q*c_u, s_p*s_q*c_u - c_p * s_u, c_p*s_q*c_u + s_p*s_u,
+        // Body->world DCM (ZYX); rebuilt each iteration (not static).
+        float R[3 * 3] = {
+            c_q*c_u, s_p*s_q*c_u - c_p*s_u, c_p*s_q*c_u + s_p*s_u,
             c_q*s_u, s_p*s_q*s_u + c_p*c_u, c_p*s_q*s_u - s_p*c_u,
-            -s_q, s_p*c_q, c_p*c_q
+            -s_q,    s_p*c_q,               c_p*c_q
         };
 
         float Z_imu_acc_world[3] = {0};
@@ -348,14 +351,13 @@ void state_estimation(void *pvParameters)
         for (int i = 0; i < meas_dim; i++) innov[i] = Z[i] - HXpre[i];
 
         // -----------------------------------------------------------------
-        // 8. Update: X = Xpre + Kf*innov + g_correction
+        // 8. Update: X = Xpre + Kf*innov
+        //    No gravity correction: BNO08x linear_accel is already gravity-free.
         // -----------------------------------------------------------------
         float Kf_innov[18] = {0};
-        float g_correction[18] = {0}
-        g_correction[14] = -GRAV
 
         dspm_mult_f32(Kf_ptr, innov, Kf_innov, 18, meas_dim, 1);  // Kf(18×m) * innov(m×1)
-        for (int i = 0; i < 18; i++) X[i] = Xpre[i] + Kf_innov[i] + g_correction[i];
+        for (int i = 0; i < 18; i++) X[i] = Xpre[i] + Kf_innov[i];
 
         // -----------------------------------------------------------------
         // 9. Write estimated state to globals
@@ -398,7 +400,7 @@ void position_controller(void *pvParameters)
 
     // K_pos (2×6) — LQR gain matrix, row-major
     // output = K_pos * [x_err, y_err, vx_err, vy_err, int_x_err, int_y_err]'
-    // PLACEHOLDER: fill in tuned values before use.
+    // Fly-test: gains intentionally zero — no closed-loop position control yet.
     static const float K_pos[2 * 6] = {0};
 
     // SP_pos (6×1) — position setpoint; all zeros = hover at origin
@@ -507,7 +509,7 @@ void hover_controller(void *pvParameters)
 
     // Actuation mapping constants
     constexpr float KT_ACT = 0.021f;  // thrust coefficient [N/(rad/s)²]
-    constexpr float C_ARM  = 0.05f;   // gimbal moment arm [m]
+    constexpr float C_ARM  = 0.1f;    // gimbal moment arm [m] — matches KF ARM / David's Simulink a = 0.1
 
     // Anti-windup throttle threshold — PLACEHOLDER: fill in before use
     constexpr float MAX_THROTTLE   = 0.0f;  // maximum throttle value
@@ -515,7 +517,8 @@ void hover_controller(void *pvParameters)
 
     // K_hov (4×9) — LQR gain matrix, row-major
     // lqr_out = K_hov * [roll_err, pitch_err, yaw_err, gx_err, gy_err, gz_err, z_err, vz_err, int_z_err]'
-    // PLACEHOLDER: fill in tuned values before use.
+    // Fly-test: gains intentionally zero — throttle is manual via the ground-
+    // station slider. Fill in tuned LQR values before closed-loop hover.
     static const float K_hov[4 * 9] = {0};
 
     // SP_hover (9×1) — hover setpoint; all zeros (level attitude, hold position)
@@ -587,12 +590,28 @@ void hover_controller(void *pvParameters)
         // 6. Actuation mapping: [F1, F2, F3, Mz] → [alpha1, alpha2, omega1, omega2, lambda]
         // -----------------------------------------------------------------
         float F_norm  = sqrtf(F1*F1 + F2*F2 + F3*F3);
-        float alpha_1 = asinf(F2 / F_norm);
-        float alpha_2 = acosf(F3 / sqrtf(F1*F1 + F3*F3));
-        float omega_1 = sqrtf(F_norm / KT_ACT);
-        float lambda  = 1.0f - (Mz / (C_ARM * F3));
-        float F_2norm = lambda * F_norm;
-        float omega_2 = sqrtf(fabsf(F_2norm) / KT_ACT);
+        float alpha_1 = 0.0f;
+        float alpha_2 = 0.0f;
+        float omega_1 = 0.0f;
+        float omega_2 = 0.0f;
+        float lambda  = 1.0f;
+
+        // Guard against the zero-gain case (K_hov = 0 until LQR gains are
+        // tuned): with no net force commanded the inverse mapping below would
+        // divide 0/0 and produce NaNs that would poison the Kalman filter.
+        if (F_norm > 1e-6f) {
+            alpha_1 = asinf(F2 / F_norm);
+            float f13 = sqrtf(F1*F1 + F3*F3);
+            if (f13 > 1e-6f) {
+                alpha_2 = acosf(F3 / f13);
+            }
+            omega_1 = sqrtf(F_norm / KT_ACT);
+            if (fabsf(F3) > 1e-6f) {
+                lambda = 1.0f - (Mz / (C_ARM * F3));
+            }
+            float F_2norm = lambda * F_norm;
+            omega_2 = sqrtf(fabsf(F_2norm) / KT_ACT);
+        }
 
         // -----------------------------------------------------------------
         // 7. Publish actuation output
@@ -740,6 +759,26 @@ void servo_test_via_serial_blocking()
 
 extern "C" void app_main(void)
 {
+#if MOTOR_WIRING_TEST_MODE
+    // Bench-only motor wiring test: bypasses IMU, GPS, ESP-NOW, BMP390 and all
+    // control tasks. Drives both ESCs at a fixed throttle (see motor_init.hpp).
+    ESP_LOGW(TAG, "MOTOR_WIRING_TEST_MODE enabled: motor wiring test only");
+
+    estop_triggered = false;
+    last_gs_msg_time = 0;
+
+    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "motor_test", 4096, NULL, 3, NULL, APP_CPU_NUM);
+    if (motor_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create motor wiring test task!");
+    } else {
+        ESP_LOGI(TAG, "Motor wiring test task started.");
+    }
+
+    while (1)
+    {
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+#else
     //enable power to the STEMMA QT connector (I2C power) early
     ESP_LOGI(TAG, "Enabling STEMMA QT power (GPIO 2)...");
     gpio_reset_pin(GPIO_NUM_2);
@@ -873,4 +912,5 @@ extern "C" void app_main(void)
         // delay time is irrelevant, we just don't want to trip WDT
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+#endif // MOTOR_WIRING_TEST_MODE
 }

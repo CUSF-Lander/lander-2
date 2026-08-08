@@ -21,6 +21,7 @@ public:
 
 	esp_err_t init(bool wait = true);
 	esp_err_t sendThrottle(uint16_t throttle);
+	esp_err_t sendDirectionCommand(bool reversed);
 	esp_err_t setReversed(bool reversed);
 	esp_err_t beep();
 

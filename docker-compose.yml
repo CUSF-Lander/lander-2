@@ -1,0 +1,43 @@
+# Cross-platform ESP-IDF v6.0.2 build environment for the CUSF Lander.
+#
+# Builds the firmware inside the official Espressif Docker image, so no
+# ESP-IDF toolchain needs to be installed on the host. Works on:
+#   - Windows  (Docker Desktop)
+#   - macOS    (Docker Desktop / colima, incl. Apple Silicon — arm64 image)
+#   - Linux    (Docker Engine)
+#
+# Usage:
+#   docker compose run --rm lander           # build lander firmware (ESP32)
+#   docker compose run --rm ground-station   # build ground-station firmware
+#
+# The official image auto-sources the IDF environment, so idf.py works
+# directly. Build artifacts land in <project>/build/ (gitignored) on the
+# host, ready to flash with esptool — no host toolchain needed.
+#
+# NOTE: the BNO08x submodule must be initialized first:
+#   git submodule update --init --recursive
+#
+# The ground-station targets ESP32 by default (sdkconfig-driven). For an
+# ESP32-S3 ground station, switch the target once and build as normal:
+#   docker compose run --rm ground-station idf.py set-target esp32s3
+
+services:
+  lander:
+    image: espressif/idf:v6.0.2
+    working_dir: /workspace/lander
+    volumes:
+      - .:/workspace
+    environment:
+      - IDF_TARGET=esp32
+    command: >
+      sh -c "idf.py build && idf.py merge-bin -o merged.bin"
+
+  ground-station:
+    image: espressif/idf:v6.0.2
+    working_dir: /workspace/ground-station
+    volumes:
+      - .:/workspace
+    environment:
+      - IDF_TARGET=esp32
+    command: >
+      sh -c "idf.py build && idf.py merge-bin -o merged.bin"

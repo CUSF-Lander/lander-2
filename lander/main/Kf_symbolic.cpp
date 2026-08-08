@@ -55,7 +55,7 @@ void update_kalman_matrices(dspm::Mat& A, dspm::Mat& B, dspm::Mat& H,
     A(4, 4) = 1.0f;  A(4, 10) = dt;  A(4, 16) = dt2_half;
     A(5, 5) = 1.0f;  A(5, 11) = dt;  A(5, 17) = dt2_half;
 
-    // ---- Rows 6-11: velocity / rate integrators (WERE MISSING) -------
+    // ---- Rows 6-11: velocity / rate integrators ----------------------
     A(6,  6) = 1.0f;  A(6,  12) = dt;
     A(7,  7) = 1.0f;  A(7,  13) = dt;
     A(8,  8) = 1.0f;  A(8,  14) = dt;
@@ -63,8 +63,7 @@ void update_kalman_matrices(dspm::Mat& A, dspm::Mat& B, dspm::Mat& H,
     A(10,10) = 1.0f;  A(10, 16) = dt;
     A(11,11) = 1.0f;  A(11, 17) = dt;
 
-    // ---- Rows 12-14: linear accel Jacobian w.r.t. euler angles -------
-    // (these are your old rows 6-8, unchanged, just relocated)
+    // ---- Rows 12-14: linear accel Jacobian w.r.t. euler angles ------
     A(12, 3) = T*(ca1*ca2*r35 - sa1*r32);
     A(12, 4) = g*cq*cq*cu - g*sp*sq*r35 - cu*sq*f42
              + g*cp*sq*r32 - cp*cq*cu*f44 - cq*cu*sp*f43;
@@ -79,8 +78,7 @@ void update_kalman_matrices(dspm::Mat& A, dspm::Mat& B, dspm::Mat& H,
     A(14, 4) = -cq*f42 + cp*sq*f44 + sp*sq*f43;
     // A(14, 5) is identically zero
 
-    // ---- Rows 15-17: angular accel Jacobian (gyroscopic) -------------
-    // NOTE: columns are 9-11 (body rates), NOT 15-17. No dt factor.
+    // ---- Rows 15-17: angular accel Jacobian (gyroscopic, cols 9-11) --
     A(15, 10) = (Jy - Jz) * wz / Jx;
     A(15, 11) = (Jy - Jz) * wy / Jx;
 
@@ -130,7 +128,7 @@ void update_kalman_matrices(dspm::Mat& A, dspm::Mat& B, dspm::Mat& H,
 
     // -----------------------------------------------------------------
     // H (9×18) — IMU-only observation matrix
-    // Z_imu = [roll, pitch, yaw, ax_body, ay_body, az_body, wx, wy, wz]
+    // Z_imu = [roll, pitch, yaw, ax_world, ay_world, az_world, wx, wy, wz]
     // Barometer and GPS rows are appended by the caller.
     // -----------------------------------------------------------------
 
@@ -139,7 +137,8 @@ void update_kalman_matrices(dspm::Mat& A, dspm::Mat& B, dspm::Mat& H,
     H(1, 4) = 1.0f;
     H(2, 5) = 1.0f;
 
-    // Accelerometer Jacobian (rows 3–5): ∂(predicted body accel)/∂(state)
+    // Accel Jacobian (rows 3-5): body-frame accel states rotated to world
+    // frame (H(·,12/13/14) are rotation-matrix rows), matching Z[3..5].
     H(3, 4)  = -az*cq - ax*cu*sq - ay*sq*su;
     H(3, 5)  =  ay*cq*cu - ax*cq*su;
     H(3, 12) =  cq*cu;

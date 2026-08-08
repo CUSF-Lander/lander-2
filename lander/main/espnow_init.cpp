@@ -6,6 +6,7 @@
 #include "nvs_flash.h"
 #include "globalvars.hpp"
 #include "comms/comm.h"
+#include "motor_init.hpp"
 #include <cstring>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -47,6 +48,12 @@ void esp_now_cmd_handler(const uint8_t *data, size_t len, const uint8_t *src_mac
             latest_velocity = {0.0, 0.0, 0.0};
             latest_position = {0.0, 0.0, 0.0};
             portEXIT_CRITICAL(&global_spinlock);
+        } else if (cmd->command == 5) { //SET_PIN
+            ESP_LOGW(TAG, "SET_PIN COMMAND RECEIVED! Motor %d -> GPIO %d", cmd->arg1, cmd->arg2);
+            request_motor_pin_change(cmd->arg1, (gpio_num_t)cmd->arg2);
+        } else if (cmd->command == 6) { //SET_POWER
+            ESP_LOGW(TAG, "SET_POWER COMMAND RECEIVED! Power -> %d%%", cmd->arg1);
+            motor_power_percent = cmd->arg1;
         }
     }
 }

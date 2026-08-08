@@ -219,7 +219,7 @@ void esp_now_send_estop(void)
         return;
     }
     
-    esp_now_cmd_t cmd; cmd.type = 0x05;
+    esp_now_cmd_t cmd = {}; cmd.type = 0x05;
     cmd.command = 1;
     
     esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
@@ -241,7 +241,7 @@ void esp_now_send_zero_imu(void)
         return;
     }
     
-    esp_now_cmd_t cmd; cmd.type = 0x05;
+    esp_now_cmd_t cmd = {}; cmd.type = 0x05;
     cmd.command = 2;
     
     esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
@@ -262,36 +262,72 @@ void esp_now_send_arm(void)
         ESP_LOGE(TAG, "Cannot send ARM: Lander MAC unknown");
         return;
     }
-
-    esp_now_cmd_t cmd; cmd.type = 0x05;
+    
+    esp_now_cmd_t cmd = {}; cmd.type = 0x05;
     cmd.command = 4;
-
+    
     esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
     if (result == ESP_OK) {
         ESP_LOGI(TAG, "ARM command sent successfully");
-        printf("{\"type\":\"arm_status\",\"status\":\"sent\"}\n");
-        fflush(stdout);
     } else {
-        ESP_LOGE(TAG, "Error sending ARM command: %s", esp_err_to_name(result));
-        printf("{\"type\":\"arm_status\",\"status\":\"error\"}\n");
-        fflush(stdout);
+        ESP_LOGE(TAG, "Error sending ARM: %s", esp_err_to_name(result));
+    }
+}
+
+void esp_now_send_set_pin(uint8_t motor_idx, uint8_t pin)
+{
+    if (!lander_mac_known) {
+        ESP_LOGE(TAG, "Cannot send SET_PIN: Lander MAC unknown");
+        return;
+    }
+    
+    esp_now_cmd_t cmd = {}; 
+    cmd.type = 0x05;
+    cmd.command = 5;
+    cmd.arg1 = motor_idx;
+    cmd.arg2 = pin;
+    
+    esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
+    if (result == ESP_OK) {
+        ESP_LOGI(TAG, "SET_PIN command sent successfully");
+    } else {
+        ESP_LOGE(TAG, "Error sending SET_PIN: %s", esp_err_to_name(result));
+    }
+}
+
+void esp_now_send_set_power(uint8_t power_percent)
+{
+    if (!lander_mac_known) {
+        ESP_LOGE(TAG, "Cannot send SET_POWER: Lander MAC unknown");
+        return;
+    }
+
+    esp_now_cmd_t cmd = {};
+    cmd.type = 0x05;
+    cmd.command = 6;
+    cmd.arg1 = power_percent;
+    cmd.arg2 = 0;
+
+    esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
+    if (result == ESP_OK) {
+        ESP_LOGI(TAG, "SET_POWER command sent successfully");
+    } else {
+        ESP_LOGE(TAG, "Error sending SET_POWER: %s", esp_err_to_name(result));
     }
 }
 
 void esp_now_send_heartbeat(void)
 {
     if (!lander_mac_known) {
-        return; // Suppress log to avoid spamming
+        return; //suppress log to avoid spamming
     }
-    
-    esp_now_cmd_t cmd; cmd.type = 0x05;
-    cmd.command = 3; // HEARTBEAT
-    
+
+    esp_now_cmd_t cmd = {};
+    cmd.type = 0x05;
+    cmd.command = 3; //HEARTBEAT
+
     esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
 }
-
-#include <sys/select.h>
-#include <fcntl.h>
 
 static void hw_estop_task(void *pvParameter)
 {
@@ -333,9 +369,25 @@ static void sw_estop_task(void *pvParameter)
                 } else if (strcmp(line, "ARM") == 0) {
                     ESP_LOGW(TAG, "SW ARM TRIGGERED!");
                     esp_now_send_arm();
+                } else if (strncmp(line, "SET_PIN", 7) == 0) {
+                    int motor_idx = 0;
+                    int pin = 0;
+                    if (sscanf(line, "SET_PIN %d %d", &motor_idx, &pin) == 2) {
+                        esp_now_send_set_pin((uint8_t)motor_idx, (uint8_t)pin);
+                    }
+                } else if (strncmp(line, "SET_POWER", 9) == 0) {
+                    int power = 0;
+                    if (sscanf(line, "SET_POWER %d", &power) == 1) {
+                        if (power < 0) {
+                            power = 0;
+                        } else if (power > 100) {
+                            power = 100;
+                        }
+                        esp_now_send_set_power((uint8_t)power);
+                    }
                 }
                 pos = 0;
-            } else if (pos < sizeof(line) - 1) {
+            } else if (pos < (int)sizeof(line) - 1) {
                 line[pos++] = c;
             }
         } else {
