@@ -17,16 +17,20 @@ struct motor_pin_change_request_t {
 
 static QueueHandle_t motor_pin_change_queue = nullptr;
 
-// Constants
-#define MIN_THROTTLE 48      // Minimum throttle value
-#define MAX_THROTTLE 2047    // Maximum throttle value
+// DShot reserves values 0-47 for stop and special commands. Values 48-2047
+// represent the usable throttle range.
+static constexpr uint16_t MIN_THROTTLE = 48;
+static constexpr uint16_t MAX_THROTTLE = 2047;
 
-// Global ESC instances so they can be re-initialized remotely
+// Global ESC instances allow an ESTOP-gated ground-station command to move a
+// motor output to another safe GPIO during bench work.
 static DShotRMT global_esc1;
 static DShotRMT global_esc2;
 
 static uint16_t power_percent_to_throttle(uint8_t power_percent)
 {
+    // Zero is a distinct DShot stop command, not the bottom of the 48-2047
+    // throttle range.
     if (power_percent == 0) {
         return 0;
     }
@@ -35,29 +39,36 @@ static uint16_t power_percent_to_throttle(uint8_t power_percent)
         power_percent = 100;
     }
 
-    return MIN_THROTTLE + (uint16_t)((power_percent * (MAX_THROTTLE - MIN_THROTTLE)) / 100);
+    return MIN_THROTTLE
+        + static_cast<uint16_t>(
+            (power_percent * (MAX_THROTTLE - MIN_THROTTLE)) / 100);
 }
 
 // Reject pins unsafe for DShot before tearing down the old pin: 34-39
 // (input-only), 6-11 (flash), 0/12/15 (strapping), 1/3 (UART0), 2 (sensor power).
 static bool is_valid_dshot_pin(gpio_num_t pin)
 {
-    const int p = (int)pin;
+    const int p = static_cast<int>(pin);
 
     if (p < 0 || p > 33) {
         ESP_LOGE(TAG, "Invalid DShot GPIO %d (valid: 0-33, output-capable)", p);
         return false;
     }
-    if ((p >= 6 && p <= 11) || p == 0 || p == 1 || p == 2 || p == 3 || p == 12 || p == 15) {
-        ESP_LOGE(TAG, "Refusing DShot GPIO %d: reserved (flash, strapping, UART0 or sensor power)", p);
+    if ((p >= 6 && p <= 11) || p == 0 || p == 1 || p == 2 || p == 3
+        || p == 12 || p == 15) {
+        ESP_LOGE(TAG,
+                 "Refusing DShot GPIO %d: reserved (flash, strapping, UART0 or sensor power)",
+                 p);
         return false;
     }
 
     return true;
 }
 
-void reinit_motor_pin(uint8_t motor_idx, gpio_num_t new_pin) {
+void reinit_motor_pin(uint8_t motor_idx, gpio_num_t new_pin)
+{
     ESP_LOGW(TAG, "Reinitializing motor %d to GPIO %d", motor_idx, new_pin);
+
     DShotRMT *target = nullptr;
     if (motor_idx == 0) {
         target = &global_esc1;
@@ -68,39 +79,42 @@ void reinit_motor_pin(uint8_t motor_idx, gpio_num_t new_pin) {
         return;
     }
 
-    if (target == nullptr) {
-        return;
-    }
-
     if (!is_valid_dshot_pin(new_pin)) {
         ESP_LOGE(TAG, "Ignoring SET_PIN for motor %d: GPIO %d is not usable for DShot",
-                 motor_idx, (int)new_pin);
+                 motor_idx, static_cast<int>(new_pin));
         return;
     }
 
     // Stop driving the old pin before releasing the RMT channel.
-    target->sendThrottle(0);
+    esp_err_t result = target->sendThrottle(0);
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to stop motor %d before changing pin: %s",
+                 motor_idx, esp_err_to_name(result));
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(20));
 
-    esp_err_t result = target->uninstall();
+    result = target->uninstall();
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to uninstall DShot driver for motor %d: %d", motor_idx, result);
+        ESP_LOGE(TAG, "Failed to uninstall DShot driver for motor %d: %s",
+                 motor_idx, esp_err_to_name(result));
         return;
     }
 
     result = target->install(new_pin);
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install DShot driver for motor %d on GPIO %d: %d", motor_idx, new_pin, result);
+        ESP_LOGE(TAG, "Failed to install DShot driver for motor %d on GPIO %d: %s",
+                 motor_idx, static_cast<int>(new_pin), esp_err_to_name(result));
         return;
     }
 
-    // NOTE: init() holds zero throttle for DSHOT_ARM_DELAY (~5 s), blocking this
-    // task. The other ESC receives no DShot frames during that window (BLHeli_S
-    // may fail-safe and need re-arming), and the 500 ms GS ESTOP watchdog is
-    // skipped meanwhile. Bench-use only.
+    // init() holds zero throttle for about five seconds, blocking this task.
+    // The other ESC receives no DShot frames during that window, so runtime pin
+    // changes are permitted only while ESTOP is engaged and remain bench-only.
     result = target->init();
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to reinitialize motor %d on GPIO %d: %d", motor_idx, new_pin, result);
+        ESP_LOGE(TAG, "Failed to reinitialize motor %d on GPIO %d: %s",
+                 motor_idx, static_cast<int>(new_pin), esp_err_to_name(result));
     }
 }
 
@@ -117,7 +131,8 @@ void request_motor_pin_change(uint8_t motor_idx, gpio_num_t new_pin)
     };
 
     if (xQueueSend(motor_pin_change_queue, &request, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Motor pin change queue full, dropping request for motor %d", motor_idx);
+        ESP_LOGW(TAG, "Motor pin change queue full, dropping request for motor %d",
+                 motor_idx);
     }
 }
 
@@ -130,11 +145,11 @@ static esp_err_t hold_both_zero_ms(uint32_t duration_ms)
     const TickType_t interval = pdMS_TO_TICKS(10);
 
     while ((xTaskGetTickCount() - start) < duration) {
-        esp_err_t r1 = global_esc1.sendThrottle(0);
-        esp_err_t r2 = global_esc2.sendThrottle(0);
-        if (r1 != ESP_OK || r2 != ESP_OK) {
+        const esp_err_t result1 = global_esc1.sendThrottle(0);
+        const esp_err_t result2 = global_esc2.sendThrottle(0);
+        if (result1 != ESP_OK || result2 != ESP_OK) {
             ESP_LOGE(TAG, "Failed to send zero throttle (ESC1: %s, ESC2: %s)",
-                     esp_err_to_name(r1), esp_err_to_name(r2));
+                     esp_err_to_name(result1), esp_err_to_name(result2));
             return ESP_ERR_INVALID_STATE;
         }
         vTaskDelay(interval);
@@ -144,57 +159,65 @@ static esp_err_t hold_both_zero_ms(uint32_t duration_ms)
 
 void init_2_motors(void* pvParameters)
 {
-    // Pin configurations: GPIO 4 for motor 1, GPIO 25 for motor 2
-    gpio_num_t dshot_gpio = GPIO_NUM_4;
-    gpio_num_t dshot_gpio2 = GPIO_NUM_25;
+    // Physical motor mapping for the current counter-rotating propeller stack:
+    //   ESC 1 / GPIO 4  = bottom propeller
+    //   ESC 2 / GPIO 25 = top propeller
+    // ESP-IDF 6 allocates RMT channels dynamically, so channel numbers are not
+    // supplied by this application.
+    constexpr gpio_num_t dshot_gpio1 = GPIO_NUM_4;
+    constexpr gpio_num_t dshot_gpio2 = GPIO_NUM_25;
 
     ESP_LOGI(TAG, "Initializing DShot RMT for both motors");
 
-    esp_err_t result = global_esc1.install(dshot_gpio);
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install DShot driver for motor 1: %s", esp_err_to_name(result));
+    esp_err_t result1 = global_esc1.install(dshot_gpio1);
+    if (result1 != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to install ESC 1 DShot driver: %s",
+                 esp_err_to_name(result1));
         ESP_LOGE(TAG, "Motor output disabled");
-        vTaskDelete(NULL);
+        vTaskDelete(nullptr);
         return;
     }
 
     esp_err_t result2 = global_esc2.install(dshot_gpio2);
     if (result2 != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install DShot driver for motor 2: %s", esp_err_to_name(result2));
+        ESP_LOGE(TAG, "Failed to install ESC 2 DShot driver: %s",
+                 esp_err_to_name(result2));
         ESP_LOGE(TAG, "Motor output disabled");
-        vTaskDelete(NULL);
+        global_esc1.uninstall();
+        vTaskDelete(nullptr);
         return;
     }
 
-    // Arm both ESCs simultaneously. (Sequential arming made the second motor
-    // start its arming period ~5 s after the first one finished.)
-    ESP_LOGI(TAG, "Holding both ESCs at zero throttle for %d ms", MOTOR_ARM_ZERO_HOLD_MS);
+    // Arm both ESCs together. Sequential five-second init() calls caused the
+    // bottom motor to initialize about five seconds before the top motor.
+    ESP_LOGI(TAG, "Holding both ESCs at zero throttle for %d ms",
+             MOTOR_ARM_ZERO_HOLD_MS);
     if (hold_both_zero_ms(MOTOR_ARM_ZERO_HOLD_MS) != ESP_OK) {
         ESP_LOGE(TAG, "Motor output disabled");
-        vTaskDelete(NULL);
+        vTaskDelete(nullptr);
         return;
     }
+    ESP_LOGI(TAG, "Both ESCs armed successfully");
 
 #if MOTOR_REVERSE_BOTH_ON_STARTUP
     // BLHeli_S command 21 is a temporary reversal relative to the direction
-    // saved in ESC flash. Send it at every startup, while both motors remain
-    // at zero throttle. Ten identical packets exceed the six-packet minimum.
+    // saved in ESC flash. Ten packets exceed the six-packet minimum.
     ESP_LOGW(TAG, "Applying temporary DShot reversal to both motors");
 
     if (hold_both_zero_ms(MOTOR_DIRECTION_COMMAND_ZERO_HOLD_MS) != ESP_OK) {
         ESP_LOGE(TAG, "Motor output disabled");
-        vTaskDelete(NULL);
+        vTaskDelete(nullptr);
         return;
     }
 
-    for (int i = 0; i < MOTOR_DIRECTION_COMMAND_REPEATS; i++) {
-        result = global_esc1.sendDirectionCommand(true);
+    for (int i = 0; i < MOTOR_DIRECTION_COMMAND_REPEATS; ++i) {
+        result1 = global_esc1.sendDirectionCommand(true);
         result2 = global_esc2.sendDirectionCommand(true);
-        if (result != ESP_OK || result2 != ESP_OK) {
+        if (result1 != ESP_OK || result2 != ESP_OK) {
             ESP_LOGE(TAG, "Failed to send direction command (ESC1: %s, ESC2: %s)",
-                     esp_err_to_name(result), esp_err_to_name(result2));
+                     esp_err_to_name(result1), esp_err_to_name(result2));
             ESP_LOGE(TAG, "Motor output disabled");
-            vTaskDelete(NULL);
+            vTaskDelete(nullptr);
             return;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -202,77 +225,88 @@ void init_2_motors(void* pvParameters)
 
     if (hold_both_zero_ms(MOTOR_DIRECTION_COMMAND_SETTLE_MS) != ESP_OK) {
         ESP_LOGE(TAG, "Motor output disabled");
-        vTaskDelete(NULL);
+        vTaskDelete(nullptr);
         return;
     }
 
     ESP_LOGI(TAG,
              "DShot reversal commands sent to both motors; "
              "direction must be verified with propellers removed");
-#endif // MOTOR_REVERSE_BOTH_ON_STARTUP
+#endif
 
     if (motor_pin_change_queue == nullptr) {
         motor_pin_change_queue = xQueueCreate(4, sizeof(motor_pin_change_request_t));
     }
+    if (motor_pin_change_queue == nullptr) {
+        ESP_LOGW(TAG, "Motor pin-change queue unavailable; runtime pin changes disabled");
+    }
 
-    static bool logged_first_throttle = false;
+#if MOTOR_WIRING_TEST_MODE
+    ESP_LOGW(TAG,
+             "MOTOR_WIRING_TEST_MODE enabled: ignoring ground-station timeout and software ESTOP");
+    ESP_LOGW(TAG, "Fixed bench-test throttle: %d%%",
+             MOTOR_WIRING_TEST_THROTTLE_PERCENT);
+#endif
 
-    // Main control loop: drive both ESCs at the throttle set by the ground
-    // station power slider. Pins stay on GPIO 4/25 unless a SET_PIN command
-    // arrives over ESP-NOW (queued via request_motor_pin_change).
-    ESP_LOGI(TAG, "Entering control loop");
+    bool logged_first_throttle = false;
+    ESP_LOGI(TAG, "Entering motor control loop");
+
     while (true) {
         motor_pin_change_request_t request;
-        while (motor_pin_change_queue != nullptr && xQueueReceive(motor_pin_change_queue, &request, 0) == pdTRUE) {
+        while (motor_pin_change_queue != nullptr
+               && xQueueReceive(motor_pin_change_queue, &request, 0) == pdTRUE) {
             if (!estop_triggered.load()) {
-                // Pin changes re-arm an ESC (~5 s) and block this task: only while ESTOP'd.
-                ESP_LOGW(TAG, "Rejecting SET_PIN for motor %d while motors are armed", request.motor_idx);
+                ESP_LOGW(TAG,
+                         "Rejecting SET_PIN for motor %d while motors are armed",
+                         request.motor_idx);
                 continue;
             }
             reinit_motor_pin(request.motor_idx, request.new_pin);
         }
 
 #if !MOTOR_WIRING_TEST_MODE
-        // Automatically trigger ESTOP if no messages from GS in 500ms
-        if (last_gs_msg_time > 0 && (esp_timer_get_time() - last_gs_msg_time) > 500000) {
-            if (!estop_triggered) {
-                ESP_LOGE(TAG, "Ground station connection lost (500ms timeout)! Triggering ESTOP.");
+        // Trigger ESTOP if ground-station traffic disappears for 500 ms.
+        if (last_gs_msg_time > 0
+            && (esp_timer_get_time() - last_gs_msg_time) > 500000) {
+            if (!estop_triggered.load()) {
+                ESP_LOGE(TAG,
+                         "Ground station connection lost (500ms timeout)! Triggering ESTOP.");
+                motor_power_percent = 0;
                 estop_triggered = true;
             }
         }
 
-        if (estop_triggered) {
-            //send 0 throttle to stop motors
+        if (estop_triggered.load()) {
             global_esc1.sendThrottle(0);
             global_esc2.sendThrottle(0);
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
-#endif // !MOTOR_WIRING_TEST_MODE
+#endif
 
 #if MOTOR_WIRING_TEST_MODE
-        // Bench wiring-test mode: fixed throttle, ignores ground station.
-        uint16_t throttle_percent = MIN_THROTTLE +
-            (uint16_t)((MOTOR_WIRING_TEST_THROTTLE_PERCENT / 100.0f) * (MAX_THROTTLE - MIN_THROTTLE));
-        ESP_LOGW(TAG, "MOTOR_WIRING_TEST_MODE enabled: ignoring ground-station timeout and software ESTOP");
+        const uint16_t throttle_value =
+            power_percent_to_throttle(MOTOR_WIRING_TEST_THROTTLE_PERCENT);
 #else
-        uint8_t power_percent = motor_power_percent.load();
-        uint16_t throttle_percent = power_percent_to_throttle(power_percent);
+        const uint16_t throttle_value =
+            power_percent_to_throttle(motor_power_percent.load());
 #endif
 
         if (!logged_first_throttle) {
-            ESP_LOGI(TAG, "About to send first throttle frame: throttle=%u", throttle_percent);
+            ESP_LOGI(TAG, "About to send first throttle frame: throttle=%u",
+                     throttle_value);
         }
 
-        // Send the throttle command to both ESCs and fail safe to zero if
-        // either transmission reports an error.
-        result = global_esc1.sendThrottle(throttle_percent);
-        result2 = global_esc2.sendThrottle(throttle_percent);
-        if (result != ESP_OK || result2 != ESP_OK) {
-            ESP_LOGE(TAG, "DShot transmission failed (ESC1: %s, ESC2: %s), failsafe to zero",
-                     esp_err_to_name(result), esp_err_to_name(result2));
+        result1 = global_esc1.sendThrottle(throttle_value);
+        result2 = global_esc2.sendThrottle(throttle_value);
+        if (result1 != ESP_OK || result2 != ESP_OK) {
+            ESP_LOGE(TAG,
+                     "DShot transmission failed (ESC1: %s, ESC2: %s); latching ESTOP",
+                     esp_err_to_name(result1), esp_err_to_name(result2));
             global_esc1.sendThrottle(0);
             global_esc2.sendThrottle(0);
+            motor_power_percent = 0;
+            estop_triggered = true;
         }
 
         if (!logged_first_throttle) {
@@ -280,9 +314,6 @@ void init_2_motors(void* pvParameters)
             logged_first_throttle = true;
         }
 
-        // Small delay to prevent overwhelming the ESC with commands
-        vTaskDelay(pdMS_TO_TICKS(10));  // 1 tick delay, typically 1ms with default FreeRTOS config
+        vTaskDelay(pdMS_TO_TICKS(10)); // 100 Hz update rate
     }
-
-    // Note: This function will never return due to the infinite loop above
 }

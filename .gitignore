@@ -5,3 +5,6 @@
 # Portable, project-level VS Code config lives in workspace.code-workspace and
 # .vscode/extensions.json, which ARE tracked.
 **/.vscode/settings.json
+
+# Generated ESP-IDF/CMake build output
+build/

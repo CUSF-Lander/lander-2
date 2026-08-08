@@ -16,9 +16,12 @@ RMT implementation of the DSHOT protocol for ESP-IDF.
 
     ```cpp
     DShotRMT esc;
-    esc.install(DSHOT_GPIO, DSHOT_RMT_CHANNEL));
+    esc.install(DSHOT_GPIO);
     esc.init();
     ```
+
+    ESP-IDF 6 allocates the RMT transmit channel dynamically; callers select
+    the output GPIO but do not supply a fixed RMT channel number.
 
 * Send velocity commands:
 

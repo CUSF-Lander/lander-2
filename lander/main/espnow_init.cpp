@@ -38,10 +38,17 @@ void esp_now_cmd_handler(const uint8_t *data, size_t len, const uint8_t *src_mac
         esp_now_cmd_t *cmd = (esp_now_cmd_t *)data;
         if (cmd->command == 1) { //ESTOP
             ESP_LOGW(TAG, "ESTOP COMMAND RECEIVED!");
+            motor_power_percent = 0;
             estop_triggered = true;
         } else if (cmd->command == 4) { //ARM: clear ESTOP so the motors may spin
-            ESP_LOGW(TAG, "ARM COMMAND RECEIVED!");
-            estop_triggered = false;
+            if (motor_power_percent.load() != 0) {
+                ESP_LOGE(TAG,
+                         "ARM rejected: commanded power must be zero (currently %u%%)",
+                         motor_power_percent.load());
+            } else {
+                ESP_LOGW(TAG, "ARM COMMAND RECEIVED at zero power!");
+                estop_triggered = false;
+            }
         } else if (cmd->command == 2) { //ZERO_IMU
             ESP_LOGW(TAG, "ZERO IMU COMMAND RECEIVED!");
             portENTER_CRITICAL(&global_spinlock);

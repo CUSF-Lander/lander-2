@@ -19,12 +19,9 @@
 			{
 				"label": "Build Select Project",
 				"type": "shell",
-				"command": "idf.py -C ${input:projectPath} build",
-				"linux": {
-					"command": "source ${userHome}/.espressif/tools/activate_idf_v6.0.2.sh && idf.py -C ${input:projectPath} build"
-				},
-				"osx": {
-					"command": "source ${userHome}/.espressif/tools/activate_idf_v6.0.2.sh && idf.py -C ${input:projectPath} build"
+				"command": "idf.py build",
+				"options": {
+					"cwd": "${input:projectPath}"
 				},
 				"group": {
 					"kind": "build",

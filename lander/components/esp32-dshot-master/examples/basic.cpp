@@ -9,7 +9,6 @@
 static const char *TAG = "dshot-example";
 
 
-#define DSHOT_RMT_CHANNEL RMT_CHANNEL_0
 #define DSHOT_GPIO GPIO_NUM_25
 
 #define MIN_THROTTLE 48
@@ -33,7 +32,7 @@ static void rampThrottle(int start, int stop, int step)
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "Initializing DShot RMT");
-    ESP_ERROR_CHECK(esc.install(DSHOT_GPIO, DSHOT_RMT_CHANNEL));
+    ESP_ERROR_CHECK(esc.install(DSHOT_GPIO));
     ESP_ERROR_CHECK(esc.init());
 
     ESP_LOGW(TAG, "Reversing");

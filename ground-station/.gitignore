@@ -5,4 +5,4 @@ __pycache__/
 sdkconfig
 sdkconfig.old
 .vscode/
-
+workspace.local.code-workspace
