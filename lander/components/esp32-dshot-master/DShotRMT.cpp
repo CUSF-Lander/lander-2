@@ -99,7 +99,16 @@ esp_err_t DShotRMT::install(gpio_num_t gpio)
 	rmt_copy_encoder_config_t copy_encoder_config = {};
 	DSHOT_ERROR_CHECK(rmt_new_copy_encoder(&copy_encoder_config, &_encoder));
 
-	return rmt_enable(_rmtChannel);
+	DSHOT_ERROR_CHECK(rmt_enable(_rmtChannel));
+
+	// IDF 6 configures the channel tick rate directly through resolution_hz;
+	// the legacy rmt_get_counter_clock() API no longer exists. With 19 ticks per
+	// bit this requested resolution produces approximately 601.5 kbit/s.
+	ESP_LOGI(TAG, "DShot RMT enabled on GPIO %d: resolution=%lu Hz, bit rate=%lu bit/s",
+			 static_cast<int>(gpio),
+			 static_cast<unsigned long>(DSHOT_RMT_RESOLUTION_HZ),
+			 static_cast<unsigned long>(DSHOT_RMT_RESOLUTION_HZ / DSHOT_TICKS_PER_BIT));
+	return ESP_OK;
 }
 
 esp_err_t DShotRMT::uninstall()
@@ -151,9 +160,9 @@ esp_err_t DShotRMT::sendThrottle(uint16_t throttle)
 
 esp_err_t DShotRMT::sendDirectionCommand(bool reversed)
 {
-	// BLHeli_S / BLHeli_32 require direction commands to be sent with the
-	// telemetry bit set while the motor is stopped. Send at least six identical
-	// packets; the caller repeats them for margin.
+	// BLHeli_S and BLHeli_32 require direction commands to be sent with the
+	// telemetry bit set while the motor is stopped. The caller must send the
+	// same command at least six times; ten repetitions provide margin.
 	return writePacket(
 			{reversed ? DIGITAL_CMD_SPIN_DIRECTION_REVERSED
 					  : DIGITAL_CMD_SPIN_DIRECTION_NORMAL,
@@ -163,11 +172,17 @@ esp_err_t DShotRMT::sendDirectionCommand(bool reversed)
 
 esp_err_t DShotRMT::setReversed(bool reversed)
 {
-	DSHOT_ERROR_CHECK(rmt_tx_wait_all_done(_rmtChannel, 100));
-	DSHOT_ERROR_CHECK(repeatPacketTicks({DSHOT_THROTTLE_MIN, 0}, 200 / portTICK_PERIOD_MS));
-	DSHOT_ERROR_CHECK(repeatPacket(
-			{reversed ? DIGITAL_CMD_SPIN_DIRECTION_REVERSED : DIGITAL_CMD_SPIN_DIRECTION_NORMAL, 1},
-			10));
+	// Commands are accepted only at zero throttle. Command 21 temporarily
+	// reverses the saved ESC direction; command 20 restores the saved direction.
+	DSHOT_ERROR_CHECK(
+			repeatPacketTicks({0, 0}, pdMS_TO_TICKS(300)));
+	for (int i = 0; i < 10; i++)
+	{
+		DSHOT_ERROR_CHECK(sendDirectionCommand(reversed));
+		vTaskDelay(1);
+	}
+	DSHOT_ERROR_CHECK(
+			repeatPacketTicks({0, 0}, pdMS_TO_TICKS(500)));
 	return ESP_OK;
 }
 

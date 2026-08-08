@@ -27,4 +27,6 @@ double altitude;
 std::atomic<bool> estop_triggered{true};
 std::atomic<bool> servo_testing_mode{false};
 std::atomic<int64_t> last_gs_msg_time{0};
-std::atomic<uint8_t> motor_power_percent{10};
+// Power always starts at zero. Arming must never reuse a nonzero value left
+// over from a previous ground-station session.
+std::atomic<uint8_t> motor_power_percent{0};

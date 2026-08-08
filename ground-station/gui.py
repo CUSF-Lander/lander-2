@@ -213,8 +213,10 @@ class GroundStationUI:
         power_frame = tb.Labelframe(self.root, text=" Motor Power ", padding=10)
         power_frame.pack(fill=X, padx=15, pady=(0, 5))
 
-        self.power_percent_var = tk.IntVar(value=10)
-        self.power_label_var = tk.StringVar(value="Power: 10 %")
+        # Safe startup: ARM must begin at zero, then power is commanded
+        # deliberately after arming.
+        self.power_percent_var = tk.IntVar(value=0)
+        self.power_label_var = tk.StringVar(value="Power: 0 %")
 
         tb.Label(power_frame, textvariable=self.power_label_var, font=("Helvetica", 11)).pack(side=LEFT, padx=(5, 10))
         self.power_scale = tb.Scale(
@@ -409,6 +411,8 @@ class GroundStationUI:
         if self.serial_port and self.serial_port.is_open:
             try:
                 self.serial_port.write(b"ESTOP\n")
+                self.power_percent_var.set(0)
+                self.power_label_var.set("Power: 0 % (ESTOP)")
                 self.lbl_estop_status.config(text="ESTOP System: TRIGGERED!", bootstyle=DANGER)
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to send ESTOP: {e}")
@@ -417,6 +421,13 @@ class GroundStationUI:
 
     def send_arm(self):
         if self.serial_port and self.serial_port.is_open:
+            if int(self.power_percent_var.get()) != 0:
+                messagebox.showwarning(
+                    "Power must be zero",
+                    "Set motor power to 0% before arming.",
+                    parent=self.root,
+                )
+                return
             if not messagebox.askyesno("Confirm ARM",
                                        "Arming clears ESTOP and allows the motors to spin. Continue?",
                                        parent=self.root):
