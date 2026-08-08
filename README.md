@@ -15,25 +15,53 @@ git clone --recurse-submodules <repo-url>
 git submodule update --init --recursive
 ```
 
+## Install Docker
+
+Docker is the only install needed — the build toolchain (ESP-IDF v6.0.2) runs inside the image, so no ESP-IDF or esptool install is required on the host. There is no universal installer: pick your OS below.
+
+| OS | Install |
+|---|---|
+| Linux | `curl -fsSL https://get.docker.com \| sh` (works on most distros), then `sudo usermod -aG docker $USER` and re-login |
+| macOS | `brew install --cask docker` (or download Docker Desktop from docker.com) |
+| Windows | `winget install Docker.DockerDesktop` (or download Docker Desktop; needs WSL2) |
+
+Verify with `docker --version && docker compose version`.
+
 ## Build
 
-With Docker (recommended — no ESP-IDF install needed):
+Both projects build inside the official `espressif/idf:v6.0.2` image (`docker-compose.yml`). No ESP-IDF toolchain needed on the host.
 
 ```bash
-./scripts/build.sh            # Windows: .\scripts\build.ps1
+docker compose run --rm lander            # lander firmware
+# or with a native ESP-IDF v6.0.2 install:
+idf.py -C lander build
 ```
 
-Or manually with `docker compose run --rm lander` / `docker compose run --rm ground-station`.
 Outputs: `lander/build/merged.bin` and `ground-station/build/merged.bin`.
 
-With a native ESP-IDF v6.0.2 install:
+The chip target defaults to ESP32 (set by `IDF_TARGET` in `docker-compose.yml` / each project's `sdkconfig`). To build for an ESP32-S3 ground station, run once:
 
 ```bash
-idf.py -C lander build
-idf.py -C ground-station build
+docker compose run --rm ground-station idf.py set-target esp32s3
 ```
 
 ## Flash
+
+`<PORT>` is `COM3` on Windows, `/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-*` on macOS.
+
+**Linux (esptool runs inside the container — no host install):**
+
+```bash
+docker run --rm --user root \
+  -v "$(pwd):/workspace" -w /workspace/lander \
+  --device /dev/ttyUSB0:/dev/ttyUSB0 \
+  espressif/idf:v6.0.2 \
+  esptool.py --chip esp32 -p /dev/ttyUSB0 --baud 460800 write_flash 0x0 build/merged.bin
+```
+
+**WSL2:** attach the USB serial with usbipd-win (`usbipd bind`) first, then use the Linux command above.
+
+**macOS / Windows:** Docker Desktop cannot forward serial ports into containers, so flash from the host:
 
 ```bash
 pip install esptool
@@ -42,8 +70,6 @@ esptool.py --chip esp32 -p <PORT> --baud 460800 write_flash 0x0 lander/build/mer
 # Ground station (ESP32-S3):
 esptool.py --chip esp32s3 -p <PORT> --baud 460800 write_flash 0x0 ground-station/build/merged.bin
 ```
-
-`<PORT>` is `COM3` on Windows, `/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-*` on macOS.
 
 ## Ground station GUI
 
