@@ -32,37 +32,65 @@ void update_kalman_matrices(dspm::Mat& A, dspm::Mat& B, dspm::Mat& H,
     // -----------------------------------------------------------------
     // A (18×18) — state transition matrix
     // -----------------------------------------------------------------
+   
+    // Thrust-to-mass scale (MATLAB's t37 = 0.021 * wt_sq)
+    float T = Kt * wt_sq / m;
 
-    // Kinematic integrators (rows 0–5)
-    A(0, 0) = 1.0f; A(0, 6) = dt; A(0, 12) = dt2_half;
-    A(1, 1) = 1.0f; A(1, 7) = dt; A(1, 13) = dt2_half;
-    A(2, 2) = 1.0f; A(2, 8) = dt; A(2, 14) = dt2_half;
-    A(3, 3) = 1.0f; A(3, 9) = dt; A(3, 15) = dt2_half;
-    A(4, 4) = 1.0f; A(4,10) = dt; A(4, 16) = dt2_half;
-    A(5, 5) = 1.0f; A(5,11) = dt; A(5, 17) = dt2_half;
+    // Rotation-matrix column entries
+    float r31 = cp*cu + sp*sq*su;   // t31
+    float r32 = sp*su + cp*cu*sq;   // t32
+    float r35 = cp*su - cu*sp*sq;   // t35
+    float r36 = cu*sp - cp*sq*su;   // t36
 
-    // Linear velocity dynamics — Jacobian w.r.t. euler angles (rows 6–8)
-    A(6, 3) = ((cp*su - cu*sp*sq)*(Kt*ca1*ca2*wt_sq - g*m*cp*cq))/m - ((sp*su + cp*cu*sq)*(Kt*sa1*wt_sq + g*m*cq*sp))/m + g*cp*cq*(cp*su - cu*sp*sq) + g*cq*sp*(sp*su + cp*cu*sq);
-    A(6, 4) = g*cq*cq*cu - g*sp*sq*(cp*su - cu*sp*sq) - (cu*sq*(g*m*sq + Kt*ca1*sa2*wt_sq))/m + g*cp*sq*(sp*su + cp*cu*sq) + (cp*cq*cu*(Kt*ca1*ca2*wt_sq - g*m*cp*cq))/m - (cq*cu*sp*(Kt*sa1*wt_sq + g*m*cq*sp))/m;
-    A(6, 5) = ((cu*sp - cp*sq*su)*(Kt*ca1*ca2*wt_sq - g*m*cp*cq))/m + ((cp*cu + sp*sq*su)*(Kt*sa1*wt_sq + g*m*cq*sp))/m - (cq*su*(g*m*sq + Kt*ca1*sa2*wt_sq))/m;
+    // Combined gravity + thrust terms
+    float f42 = g*sq       + T*ca1*sa2;   // t42
+    float f43 = g*cq*sp    + T*sa1;       // t43
+    float f44 = g*cp*cq    - T*ca1*ca2;   // t44
 
-    A(7, 3) = ((cu*sp - cp*sq*su)*(Kt*sa1*wt_sq + g*m*cq*sp))/m - ((cp*cu + sp*sq*su)*(Kt*ca1*ca2*wt_sq - g*m*cp*cq))/m - g*cp*cq*(cp*cu + sp*sq*su) - g*cq*sp*(cu*sp - cp*sq*su);
-    A(7, 4) = g*cq*cq*su + g*sp*sq*(cp*cu + sp*sq*su) - (sq*su*(g*m*sq + Kt*ca1*sa2*wt_sq))/m - g*cp*sq*(cu*sp - cp*sq*su) + (cp*cq*su*(Kt*ca1*ca2*wt_sq - g*m*cp*cq))/m - (cq*sp*su*(Kt*sa1*wt_sq + g*m*cq*sp))/m;
-    A(7, 5) = ((sp*su + cp*cu*sq)*(Kt*ca1*ca2*wt_sq - g*m*cp*cq))/m + ((cp*su - cu*sp*sq)*(Kt*sa1*wt_sq + g*m*cq*sp))/m + (cq*cu*(g*m*sq + Kt*ca1*sa2*wt_sq))/m;
+    // ---- Rows 0-5: position / attitude integrators -------------------
+    A(0, 0) = 1.0f;  A(0,  6) = dt;  A(0, 12) = dt2_half;
+    A(1, 1) = 1.0f;  A(1,  7) = dt;  A(1, 13) = dt2_half;
+    A(2, 2) = 1.0f;  A(2,  8) = dt;  A(2, 14) = dt2_half;
+    A(3, 3) = 1.0f;  A(3,  9) = dt;  A(3, 15) = dt2_half;
+    A(4, 4) = 1.0f;  A(4, 10) = dt;  A(4, 16) = dt2_half;
+    A(5, 5) = 1.0f;  A(5, 11) = dt;  A(5, 17) = dt2_half;
 
-    A(8, 3) = -(cq*sp*(Kt*ca1*ca2*wt_sq - g*m*cp*cq))/m - (cp*cq*(Kt*sa1*wt_sq + g*m*cq*sp))/m;
-    A(8, 4) = g*cp*cp*cq*sq - (cq*(g*m*sq + Kt*ca1*sa2*wt_sq))/m - (cp*sq*(Kt*ca1*ca2*wt_sq - g*m*cp*cq))/m - g*cq*sq + g*cq*sp*sp*sq + (sp*sq*(Kt*sa1*wt_sq + g*m*cq*sp))/m;
+    // ---- Rows 6-11: velocity / rate integrators (WERE MISSING) -------
+    A(6,  6) = 1.0f;  A(6,  12) = dt;
+    A(7,  7) = 1.0f;  A(7,  13) = dt;
+    A(8,  8) = 1.0f;  A(8,  14) = dt;
+    A(9,  9) = 1.0f;  A(9,  15) = dt;
+    A(10,10) = 1.0f;  A(10, 16) = dt;
+    A(11,11) = 1.0f;  A(11, 17) = dt;
 
-    // Angular velocity dynamics — Euler equations Jacobian (rows 9–11)
-    A(9,  10) = (Jy*wz - Jz*wz) / Jx;
-    A(9,  11) = (Jy*wy - Jz*wy) / Jx;
+    // ---- Rows 12-14: linear accel Jacobian w.r.t. euler angles -------
+    // (these are your old rows 6-8, unchanged, just relocated)
+    A(12, 3) = T*(ca1*ca2*r35 - sa1*r32);
+    A(12, 4) = g*cq*cq*cu - g*sp*sq*r35 - cu*sq*f42
+             + g*cp*sq*r32 - cp*cq*cu*f44 - cq*cu*sp*f43;
+    A(12, 5) = r31*f43 - r36*f44 - cq*su*f42;
 
-    A(10,  9) = -(Jx*wz - Jz*wz) / Jy;
-    A(10, 11) = -(Jx*wx - Jz*wx) / Jy;
+    A(13, 3) = T*(sa1*r36 - ca1*ca2*r31);
+    A(13, 4) = g*cq*cq*su + g*sp*sq*r31 - sq*su*f42
+             - g*cp*sq*r36 - cp*cq*su*f44 - cq*sp*su*f43;
+    A(13, 5) = r35*f43 - r32*f44 + cq*cu*f42;
 
-    A(11,  9) = (Jx*wy - Jy*wy) / Jz;
-    A(11, 10) = (Jx*wx - Jy*wx) / Jz;
+    A(14, 3) = -T*cq*(cp*sa1 + sp*ca1*ca2);
+    A(14, 4) = -cq*f42 + cp*sq*f44 + sp*sq*f43;
+    // A(14, 5) is identically zero
 
+    // ---- Rows 15-17: angular accel Jacobian (gyroscopic) -------------
+    // NOTE: columns are 9-11 (body rates), NOT 15-17. No dt factor.
+    A(15, 10) = (Jy - Jz) * wz / Jx;
+    A(15, 11) = (Jy - Jz) * wy / Jx;
+
+    A(16,  9) = (Jz - Jx) * wz / Jy;
+    A(16, 11) = (Jz - Jx) * wx / Jy;
+
+    A(17,  9) = (Jx - Jy) * wy / Jz;
+    A(17, 10) = (Jx - Jy) * wx / Jz;
+
+    
     // -----------------------------------------------------------------
     // B (18×4) — control input matrix
     // U = [a1 (gimbal1), a2 (gimbal2), wt1 (motor1), wt2 (motor2)]
