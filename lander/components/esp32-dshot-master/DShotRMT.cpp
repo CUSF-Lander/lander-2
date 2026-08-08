@@ -126,11 +126,11 @@ esp_err_t DShotRMT::init(bool wait)
 		writeData(0, true);
 	}
 
-	ESP_LOGD(TAG, "Sending idle throttle");
+	ESP_LOGD(TAG, "Holding zero throttle for arming delay");
 	if (wait)
-		DSHOT_ERROR_CHECK(repeatPacketTicks({DSHOT_THROTTLE_MIN, 0}, DSHOT_ARM_DELAY));
+		DSHOT_ERROR_CHECK(repeatPacketTicks({0, 0}, DSHOT_ARM_DELAY));
 	else
-		writePacket({DSHOT_THROTTLE_MIN, 0}, false);
+		DSHOT_ERROR_CHECK(writePacket({0, 0}, false));
 
 	ESP_LOGD(TAG, "ESC armed");
 	return ESP_OK;
@@ -138,10 +138,27 @@ esp_err_t DShotRMT::init(bool wait)
 
 esp_err_t DShotRMT::sendThrottle(uint16_t throttle)
 {
+	// Zero must be sent as a real DShot frame so ESCs are actively driven to
+	// stop (and so ESTOP / arming work correctly).
+	if (throttle == 0)
+		return writePacket({0, 0}, false);
+
 	if (throttle < DSHOT_THROTTLE_MIN || throttle > DSHOT_THROTTLE_MAX)
 		return ESP_ERR_INVALID_ARG;
 
 	return writePacket({throttle, 0}, false);
+}
+
+esp_err_t DShotRMT::sendDirectionCommand(bool reversed)
+{
+	// BLHeli_S / BLHeli_32 require direction commands to be sent with the
+	// telemetry bit set while the motor is stopped. Send at least six identical
+	// packets; the caller repeats them for margin.
+	return writePacket(
+			{reversed ? DIGITAL_CMD_SPIN_DIRECTION_REVERSED
+					  : DIGITAL_CMD_SPIN_DIRECTION_NORMAL,
+			 1},
+			false);
 }
 
 esp_err_t DShotRMT::setReversed(bool reversed)

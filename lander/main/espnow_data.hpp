@@ -32,7 +32,9 @@ typedef struct __attribute__((packed)) {
 //ESP-NOW command structure for ground station to lander
 typedef struct __attribute__((packed)) {
     uint8_t type;    // PacketType::COMMAND (0x05)
-    uint8_t command; // 1 = ESTOP, 2 = ZERO_IMU, 3 = HEARTBEAT, 4 = ARM
+    uint8_t command; // 1 = ESTOP, 2 = ZERO_IMU, 3 = HEARTBEAT, 4 = ARM, 5 = SET_PIN, 6 = SET_POWER
+    uint8_t arg1;    // Generic argument 1 (e.g., motor index 0 or 1)
+    uint8_t arg2;    // Generic argument 2 (e.g., GPIO pin number)
 } esp_now_cmd_t;
 
 #endif

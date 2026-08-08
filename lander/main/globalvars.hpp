@@ -67,6 +67,7 @@ extern u_hov_t U_hov;
 extern std::atomic<bool> estop_triggered;
 extern std::atomic<bool> servo_testing_mode;
 extern std::atomic<int64_t> last_gs_msg_time;
+extern std::atomic<uint8_t> motor_power_percent;
 
 // Data storage (using vectors for dynamic storage)
 

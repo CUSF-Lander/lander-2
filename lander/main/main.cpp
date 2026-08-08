@@ -121,17 +121,16 @@ void state_estimation(void *pvParameters)
     constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
 
     // -------------------------------------------------------------------------
-    // Vehicle physical constants
+    // Vehicle physical constants — from David's Simulink model (07/08/2026)
     // -------------------------------------------------------------------------
     constexpr float KT   = 0.021f;   // thrust coefficient        [N/(rad/s)²]
-    constexpr float KM   = 0.00105f;   // motor torque coefficient  [N·m/(rad/s)²]
-    constexpr float ARM  = 0.1f;   // gimbal moment arm         [m]
-    constexpr float MASS = 1.0f;   // vehicle mass              [kg]
-    constexpr float GRAV = 9.81f;  // gravitational acceleration [m/s²]
-    constexpr float JX   = 0.1f;   // moment of inertia x       [kg·m²]
-    constexpr float JY   = 0.1f;   // moment of inertia y       [kg·m²]
-    constexpr float JZ   = 0.3f;   // moment of inertia z       [kg·m²]
-
+    constexpr float KM   = 0.00105f; // motor torque coefficient  [N·m/(rad/s)²]
+    constexpr float ARM  = 0.1f;     // gimbal moment arm         [m]
+    constexpr float MASS = 1.0f;     // vehicle mass              [kg]
+    constexpr float GRAV = 9.81f;    // gravitational acceleration [m/s²]
+    constexpr float JX   = 0.1f;     // moment of inertia x       [kg·m²]
+    constexpr float JY   = 0.1f;     // moment of inertia y       [kg·m²]
+    constexpr float JZ   = 0.3f;     // moment of inertia z       [kg·m²]
 
     // -------------------------------------------------------------------------
     // State vector — zero-initialised, persists across iterations
@@ -163,48 +162,48 @@ void state_estimation(void *pvParameters)
     H_gps_full[12 * 18 + 2] = 1.0f;  // GPS z → state col 2
 
     // -------------------------------------------------------------------------
-    // Kf_nogps (18×10) and Kf_gps (18×13) — fixed Kalman gains, row-major
+    // Kf_nogps (18×10) and Kf_gps (18×13) — fixed Kalman gains, row-major.
+    // Steady-state gains from David's Simulink model (07/08/2026).
     // -------------------------------------------------------------------------
     static const float Kf_nogps[18 * 10] = {
-       -0.0f,     0.00763f, -0.0f,     0.00025f,  0.0f,     -0.0f,     0.0f,     -0.00016f,  0.0f,     -0.0f,
-       -0.00763f, -0.0f,     0.0f,      0.0f,      0.00025f, -0.0f,     0.00016f,  0.0f,     -0.0f,      0.0f,
-        0.0f,      0.0f,    -0.0f,     -0.0f,     -0.0f,      0.0f,    -0.0f,     -0.0f,       0.0f,     0.01593f,
-        0.00759f, -0.0f,     0.0f,     -0.0f,     -0.00024f, -0.0f,     0.00764f, -0.0f,       0.0f,      0.0f,
-       -0.0f,      0.00759f, 0.0f,      0.00024f, -0.0f,     -0.0f,     0.0f,      0.00764f, -0.0f,      0.0f,
-        0.0f,      0.0f,     0.00869f,  0.0f,      0.0f,      0.0f,    -0.0f,      0.0f,      0.00765f, -0.0f,
-        0.0f,      0.00783f, 0.0f,      0.00025f, -0.0f,     -0.0f,    -0.0f,     -0.0001f,  -0.0f,      0.0f,
-       -0.00783f, -0.0f,    -0.0f,      0.0f,      0.00025f,  0.0f,     0.0001f,  -0.0f,       0.0f,     -0.0f,
-        0.0f,     -0.0f,    -0.0f,      0.0f,     -0.0f,      0.0f,    -0.0f,     -0.0f,     -0.0f,     0.01295f,
-        0.00599f,  0.0f,    -0.0f,      0.0f,     -0.00011f, -0.0f,     0.43945f,  0.0f,     -0.0f,     -0.0f,
-       -0.0f,      0.00599f, 0.0f,      0.00011f,  0.0f,     -0.0f,     0.0f,      0.43945f, -0.0f,     -0.0f,
-        0.0f,     -0.0f,     0.00599f, -0.0f,     -0.0f,      0.0f,    -0.0f,     -0.0f,      0.43946f,  0.0f,
-       -0.0f,      0.00805f, 0.0f,      0.89113f, -0.0f,      0.0f,     0.0f,      0.00451f, -0.0f,     -0.0f,
-       -0.00805f, -0.0f,     0.0f,     -0.0f,      0.89113f, -0.0f,    -0.00451f,  0.0f,     -0.0f,     -0.0f,
-       -0.0f,     -0.0f,     0.0f,      0.0f,     -0.0f,      0.89087f, -0.0f,    -0.0f,       0.0f,      0.0f,
-        0.0f,      0.0f,     0.0f,     -0.0f,     -0.0f,     -0.0f,    -0.0f,     -0.0f,     -0.0f,      0.0f,
-        0.0f,      0.0f,    -0.0f,     -0.0f,     -0.0f,      0.0f,     0.0f,     -0.0f,     -0.0f,      0.0f,
-       -0.0f,      0.0f,    -0.0f,      0.0f,      0.0f,      0.0f,     0.0f,      0.0f,     -0.0f,      0.0f
+     0.0f,     0.0076f,  0.0f,     0.0003f, 0.0f,     0.0f,     0.0f,    -0.0002f, 0.0f,     0.0f,
+    -0.0076f,  0.0f,     0.0f,     0.0f,    0.0003f,  0.0f,     0.0002f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0159f,
+     0.0076f,  0.0f,     0.0f,     0.0f,   -0.0002f,  0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0076f,  0.0f,     0.0002f, 0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,
+     0.0f,     0.0f,     0.0087f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,
+     0.0f,     0.0078f,  0.0f,     0.0003f, 0.0f,     0.0f,     0.0f,    -0.0001f,  0.0f,     0.0f,
+    -0.0078f,  0.0f,     0.0f,     0.0f,    0.0003f,  0.0f,     0.0001f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0129f,
+     0.0060f,  0.0f,     0.0f,     0.0f,   -0.0001f,  0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0060f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,
+     0.0f,     0.0f,     0.0060f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,
+     0.0f,     0.0080f,  0.0f,     0.8911f, 0.0f,     0.0f,     0.0f,     0.0045f,  0.0f,     0.0f,
+    -0.0080f,  0.0f,     0.0f,     0.0f,    0.8911f,  0.0f,    -0.0045f,  0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.8909f,  0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f
     };
-
     static const float Kf_gps[18 * 13] = {
-       -0.0f,     0.00069f, -0.0f,     2e-05f,    0.0f,      0.0f,      0.0f,     -1e-05f,   -0.0f,     -0.0f,     0.03566f,  0.0f,     -0.0f,
-       -0.00069f,  0.0f,     0.0f,      0.0f,      2e-05f,   -0.0f,      1e-05f,   -0.0f,      0.0f,      0.0f,      0.0f,     0.03566f,  0.0f,
-        0.0f,     -0.0f,    -0.0f,     -0.0f,     -0.0f,     -0.0f,      0.0f,      0.0f,      0.0f,      0.00138f, -0.0f,      0.0f,     0.03447f,
-        0.00755f, -0.0f,    -0.0f,     -0.0f,     -0.00024f, -0.0f,      0.00764f, -0.0f,     -0.0f,      0.0f,     -0.0f,    -0.00102f,  0.0f,
-       -0.0f,      0.00755f,-0.0f,      0.00024f, -0.0f,      0.0f,      0.0f,      0.00764f, -0.0f,     -0.0f,      0.00102f, 0.0f,     -0.0f,
-       -0.0f,     -0.0f,     0.00869f,  0.0f,     -0.0f,      0.0f,      0.0f,      0.0f,      0.00765f, -0.0f,     -0.0f,      0.0f,     -0.0f,
-       -0.0f,      0.00324f,-0.0f,      0.0001f,   0.0f,      0.0f,     -0.0f,     -1e-05f,    0.0f,     -0.0f,     0.06513f, -0.0f,     -0.0f,
-       -0.00324f,  0.0f,     0.0f,      0.0f,      0.0001f,  -0.0f,      1e-05f,   -0.0f,      0.0f,      0.0f,      0.0f,     0.06513f,  0.0f,
-        0.0f,      0.0f,    -0.0f,     -0.0f,     -0.0f,      0.0f,      0.0f,     -0.0f,      0.0f,      0.00253f, -0.0f,      0.0f,     0.06327f,
-        0.00599f,  0.0f,     0.0f,      0.0f,     -0.00011f, -0.0f,      0.43945f,  0.0f,     -0.0f,      0.0f,      0.0f,     2e-05f,    0.0f,
-       -0.0f,      0.00599f, 0.0f,      0.00011f, -0.0f,      0.0f,      0.0f,      0.43945f,  0.0f,      0.0f,     -2e-05f,   -0.0f,      0.0f,
-       -0.0f,     -0.0f,     0.00599f,  0.0f,     -0.0f,     -0.0f,     -0.0f,      0.0f,      0.43946f,  0.0f,     -0.0f,      0.0f,      0.0f,
-       -0.0f,      0.00801f, 0.0f,      0.89113f, -0.0f,      0.0f,      0.0f,      0.00451f,  0.0f,     -0.0f,      0.00109f, 0.0f,     -0.0f,
-       -0.00801f, -0.0f,    -0.0f,     -0.0f,      0.89113f, -0.0f,    -0.00451f, -0.0f,     -0.0f,     -0.0f,      0.0f,      0.00109f, -0.0f,
-       -0.0f,      0.0f,     0.0f,      0.0f,     -0.0f,      0.89087f, -0.0f,      0.0f,     -0.0f,     -0.0f,      0.0f,     -0.0f,     -0.0f,
-       -0.0f,     -0.0f,    -0.0f,     -0.0f,     -0.0f,      0.0f,     -0.0f,     -0.0f,     -0.0f,     -0.0f,      0.0f,     -0.0f,     -0.0f,
-       -0.0f,      0.0f,    -0.0f,      0.0f,     -0.0f,     -0.0f,     -0.0f,      0.0f,     -0.0f,      0.0f,      0.0f,      0.0f,      0.0f,
-       -0.0f,      0.0f,    -0.0f,      0.0f,      0.0f,      0.0f,      0.0f,      0.0f,      0.0f,     -0.0f,     -0.0f,      0.0f,     -0.0f
+     0.0007f,  0.0f,     0.0f,     0.0000f, 0.0f,     0.0f,     0.0f,    -0.0000f, 0.0f,     0.0f,     0.0357f, 0.0f,     0.0f,
+    -0.0007f,  0.0f,     0.0f,     0.0f,    0.0000f,  0.0f,     0.0000f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0357f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0014f, 0.0f,     0.0f,    0.0345f,
+     0.0076f,  0.0f,     0.0f,     0.0f,   -0.0002f,  0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,     0.0f,   -0.0010f, 0.0f,
+     0.0f,     0.0076f,  0.0f,     0.0002f, 0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,     0.0010f, 0.0f,     0.0f,
+     0.0f,     0.0f,     0.0087f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0076f,  0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0032f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,    -0.0000f,  0.0f,     0.0f,     0.0651f, 0.0f,     0.0f,
+    -0.0032f,  0.0f,     0.0f,     0.0f,    0.0001f,  0.0f,     0.0000f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0651f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0025f, 0.0f,     0.0f,    0.0633f,
+     0.0060f,  0.0f,     0.0f,     0.0f,   -0.0001f,  0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0000f, 0.0f,
+     0.0f,     0.0060f,  0.0f,     0.0001f, 0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,    -0.0000f, 0.0f,     0.0f,
+     0.0f,     0.0f,     0.0060f,  0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.4395f,  0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0080f,  0.0f,     0.8911f, 0.0f,     0.0f,     0.0f,     0.0045f,  0.0f,     0.0f,     0.0011f, 0.0f,     0.0f,
+    -0.0080f,  0.0f,     0.0f,     0.0f,    0.8911f,  0.0f,    -0.0045f,  0.0f,     0.0f,     0.0f,     0.0f,    0.0011f, 0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.8909f,  0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,
+     0.0f,     0.0f,     0.0f,     0.0f,    0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,     0.0f,    0.0f
     };
 
     // GPS freshness tracking
@@ -240,14 +239,15 @@ void state_estimation(void *pvParameters)
         }
 
         // -----------------------------------------------------------------
-        // 3. Build control input U = [a1, a2, wt1, wt2]
+        // 3. Build control input U = [a1, a2, wt1, wt2] from the current
+        //    hover-controller actuation outputs.
         // -----------------------------------------------------------------
         float U[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         portENTER_CRITICAL(&global_spinlock);
-        U[0] = U_hov.alpha1  //gimbal1_angle
-        U[1] = U_hov.alpha2  //gimbal2_angle
-        U[2] = U_hov.omega1  //motor1_speed
-        U[3] = U_hov.omega2  //motor2_speed
+        U[0] = U_hov.alpha1;  // gimbal1 angle [rad]
+        U[1] = U_hov.alpha2;  // gimbal2 angle [rad]
+        U[2] = U_hov.omega1;  // motor1 speed  [rad/s]
+        U[3] = U_hov.omega2;  // motor2 speed  [rad/s]
         portEXIT_CRITICAL(&global_spinlock);
 
         // -----------------------------------------------------------------
@@ -268,18 +268,13 @@ void state_estimation(void *pvParameters)
         // -----------------------------------------------------------------
         // 5. Build measurement vector Z and select H / Kf
         // -----------------------------------------------------------------
-        
-        //Create and transform IMU linear acceleration vectors from body to world frame
-        float Z_imu_acc_body[3] = {0};
-        Z_imu_acc_body[0] = static_cast<float>(meas_lin_acc.x);   // ax body [m/s²]
-        Z_imu_acc_body[1] = static_cast<float>(meas_lin_acc.y);   // ay body
-        Z_imu_acc_body[2] = static_cast<float>(meas_lin_acc.z);   // az body
-        
-        //Note: Are directly using the sensor values, instead of the kalman filter estimates
-        //Probably fine, those measurements are more accurate. 
-        float p_rad = static_cast<float>(meas_euler.x) * deg2rad; //pitch
-        float q_rad = static_cast<float>(meas_euler.y) * deg2rad; //yaw 
-        float u_rad = static_cast<float>(meas_euler.z) * deg2rad; //roll
+
+        // Rotate the measured IMU linear acceleration from body frame into the
+        // world frame using the measured Euler angles (sensor values are more
+        // accurate than the filter estimates for this rotation).
+        float p_rad = static_cast<float>(meas_euler.x) * deg2rad;  // roll
+        float q_rad = static_cast<float>(meas_euler.y) * deg2rad;  // pitch
+        float u_rad = static_cast<float>(meas_euler.z) * deg2rad;  // yaw
 
         float c_p = cosf(p_rad);
         float s_p = sinf(p_rad);
@@ -287,29 +282,34 @@ void state_estimation(void *pvParameters)
         float s_q = sinf(q_rad);
         float c_u = cosf(u_rad);
         float s_u = sinf(u_rad);
-        
-        //R is the body to world transformation matrix
-        static const float R[3 * 3] = {
-            c_q*c_u, s_p*s_q*c_u - c_p * s_u, c_p*s_q*c_u + s_p*s_u,
+
+        // Body -> world direction cosine matrix (ZYX / yaw-pitch-roll)
+        float R[3 * 3] = {
+            c_q*c_u, s_p*s_q*c_u - c_p*s_u, c_p*s_q*c_u + s_p*s_u,
             c_q*s_u, s_p*s_q*s_u + c_p*c_u, c_p*s_q*s_u - s_p*c_u,
-            -s_q, s_p*c_q, c_p*c_q
+            -s_q,    s_p*c_q,               c_p*c_q
         };
 
+        float Z_imu_acc_body[3] = {0};
+        Z_imu_acc_body[0] = static_cast<float>(meas_lin_acc.x);
+        Z_imu_acc_body[1] = static_cast<float>(meas_lin_acc.y);
+        Z_imu_acc_body[2] = static_cast<float>(meas_lin_acc.z);
+
         float Z_imu_acc_world[3] = {0};
-        dspm_mult_f32(R, Z_imu_acc_body, Z_imu_acc_world, 3, 3, 1);  // R(3x3) * Z(3x1)
+        dspm_mult_f32(R, Z_imu_acc_body, Z_imu_acc_world, 3, 3, 1);  // R(3×3) * accel(3×1)
 
         float Z[13] = {0};
         Z[0] = meas_euler.x * deg2rad;               // roll  [rad]
         Z[1] = meas_euler.y * deg2rad;               // pitch [rad]
         Z[2] = meas_euler.z * deg2rad;               // yaw   [rad]
-        Z[3] = Z_imu_acc_world[0];   // ax world [m/s²]
-        Z[4] = Z_imu_acc_world[1];   // ay world
-        Z[5] = Z_imu_acc_world[2];   // az world
+        Z[3] = Z_imu_acc_world[0];                   // ax world [m/s²]
+        Z[4] = Z_imu_acc_world[1];                   // ay world
+        Z[5] = Z_imu_acc_world[2];                   // az world
         Z[6] = static_cast<float>(meas_ang_vel.x);   // wx [rad/s]
         Z[7] = static_cast<float>(meas_ang_vel.y);   // wy
         Z[8] = static_cast<float>(meas_ang_vel.z);   // wz
         Z[9] = static_cast<float>(baro_alt);          // baro altitude [m]
-        
+
         const float *H_ptr;
         const float *Kf_ptr;
         int meas_dim;
@@ -328,7 +328,7 @@ void state_estimation(void *pvParameters)
         }
 
         // -----------------------------------------------------------------
-        // 6. Prediction: Xpre = A*X + B*U 
+        // 6. Prediction: Xpre = A*X + B*U
         // -----------------------------------------------------------------
         float Xpre[18]  = {0};
         float tmp18[18] = {0};
@@ -336,7 +336,7 @@ void state_estimation(void *pvParameters)
 
         dspm_mult_f32(A.data, X,    tmp18, 18, 18, 1);  // A(18×18) * X(18×1)
         dspm_mult_f32(B.data, U,    bu18,  18,  4, 1);  // B(18×4)  * U(4×1)
-        for (int i = 0; i < 18; i++) Xpre[i] = tmp18[i] + 0.5 * bu18[i];
+        for (int i = 0; i < 18; i++) Xpre[i] = tmp18[i] + bu18[i];
 
         // -----------------------------------------------------------------
         // 7. Innovation: innov = Z - H*Xpre
@@ -349,10 +349,12 @@ void state_estimation(void *pvParameters)
 
         // -----------------------------------------------------------------
         // 8. Update: X = Xpre + Kf*innov + g_correction
+        //    The IMU measures specific force (includes gravity), so remove the
+        //    gravity offset from the estimated world-frame z acceleration.
         // -----------------------------------------------------------------
         float Kf_innov[18] = {0};
-        float g_correction[18] = {0}
-        g_correction[14] = -GRAV
+        float g_correction[18] = {0};
+        g_correction[14] = -GRAV;
 
         dspm_mult_f32(Kf_ptr, innov, Kf_innov, 18, meas_dim, 1);  // Kf(18×m) * innov(m×1)
         for (int i = 0; i < 18; i++) X[i] = Xpre[i] + Kf_innov[i] + g_correction[i];
@@ -398,7 +400,7 @@ void position_controller(void *pvParameters)
 
     // K_pos (2×6) — LQR gain matrix, row-major
     // output = K_pos * [x_err, y_err, vx_err, vy_err, int_x_err, int_y_err]'
-    // PLACEHOLDER: fill in tuned values before use.
+    // Fly-test: gains intentionally zero — no closed-loop position control yet.
     static const float K_pos[2 * 6] = {0};
 
     // SP_pos (6×1) — position setpoint; all zeros = hover at origin
@@ -507,7 +509,7 @@ void hover_controller(void *pvParameters)
 
     // Actuation mapping constants
     constexpr float KT_ACT = 0.021f;  // thrust coefficient [N/(rad/s)²]
-    constexpr float C_ARM  = 0.05f;   // gimbal moment arm [m]
+    constexpr float C_ARM  = 0.1f;    // gimbal moment arm [m] — matches KF ARM / David's Simulink a = 0.1
 
     // Anti-windup throttle threshold — PLACEHOLDER: fill in before use
     constexpr float MAX_THROTTLE   = 0.0f;  // maximum throttle value
@@ -515,7 +517,8 @@ void hover_controller(void *pvParameters)
 
     // K_hov (4×9) — LQR gain matrix, row-major
     // lqr_out = K_hov * [roll_err, pitch_err, yaw_err, gx_err, gy_err, gz_err, z_err, vz_err, int_z_err]'
-    // PLACEHOLDER: fill in tuned values before use.
+    // Fly-test: gains intentionally zero — throttle is manual via the ground-
+    // station slider. Fill in tuned LQR values before closed-loop hover.
     static const float K_hov[4 * 9] = {0};
 
     // SP_hover (9×1) — hover setpoint; all zeros (level attitude, hold position)
@@ -587,12 +590,28 @@ void hover_controller(void *pvParameters)
         // 6. Actuation mapping: [F1, F2, F3, Mz] → [alpha1, alpha2, omega1, omega2, lambda]
         // -----------------------------------------------------------------
         float F_norm  = sqrtf(F1*F1 + F2*F2 + F3*F3);
-        float alpha_1 = asinf(F2 / F_norm);
-        float alpha_2 = acosf(F3 / sqrtf(F1*F1 + F3*F3));
-        float omega_1 = sqrtf(F_norm / KT_ACT);
-        float lambda  = 1.0f - (Mz / (C_ARM * F3));
-        float F_2norm = lambda * F_norm;
-        float omega_2 = sqrtf(fabsf(F_2norm) / KT_ACT);
+        float alpha_1 = 0.0f;
+        float alpha_2 = 0.0f;
+        float omega_1 = 0.0f;
+        float omega_2 = 0.0f;
+        float lambda  = 1.0f;
+
+        // Guard against the zero-gain case (K_hov = 0 until LQR gains are
+        // tuned): with no net force commanded the inverse mapping below would
+        // divide 0/0 and produce NaNs that would poison the Kalman filter.
+        if (F_norm > 1e-6f) {
+            alpha_1 = asinf(F2 / F_norm);
+            float f13 = sqrtf(F1*F1 + F3*F3);
+            if (f13 > 1e-6f) {
+                alpha_2 = acosf(F3 / f13);
+            }
+            omega_1 = sqrtf(F_norm / KT_ACT);
+            if (fabsf(F3) > 1e-6f) {
+                lambda = 1.0f - (Mz / (C_ARM * F3));
+            }
+            float F_2norm = lambda * F_norm;
+            omega_2 = sqrtf(fabsf(F_2norm) / KT_ACT);
+        }
 
         // -----------------------------------------------------------------
         // 7. Publish actuation output
@@ -740,6 +759,26 @@ void servo_test_via_serial_blocking()
 
 extern "C" void app_main(void)
 {
+#if MOTOR_WIRING_TEST_MODE
+    // Bench-only motor wiring test: bypasses IMU, GPS, ESP-NOW, BMP390 and all
+    // control tasks. Drives both ESCs at a fixed throttle (see motor_init.hpp).
+    ESP_LOGW(TAG, "MOTOR_WIRING_TEST_MODE enabled: motor wiring test only");
+
+    estop_triggered = false;
+    last_gs_msg_time = 0;
+
+    BaseType_t motor_task = xTaskCreatePinnedToCore(init_2_motors, "motor_test", 4096, NULL, 3, NULL, APP_CPU_NUM);
+    if (motor_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create motor wiring test task!");
+    } else {
+        ESP_LOGI(TAG, "Motor wiring test task started.");
+    }
+
+    while (1)
+    {
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+#else
     //enable power to the STEMMA QT connector (I2C power) early
     ESP_LOGI(TAG, "Enabling STEMMA QT power (GPIO 2)...");
     gpio_reset_pin(GPIO_NUM_2);
@@ -873,4 +912,5 @@ extern "C" void app_main(void)
         // delay time is irrelevant, we just don't want to trip WDT
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+#endif // MOTOR_WIRING_TEST_MODE
 }
