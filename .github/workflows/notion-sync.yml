@@ -3,7 +3,7 @@ name: Sync Issues to Notion
 on:
   issues:
     types: [opened, edited, closed, reopened]
-  workflow_dispatch: # Lets you click "Run workflow" in GitHub to import all existing open issues
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -19,18 +19,17 @@ jobs:
           ISSUE_JSON: ${{ toJson(github.event.issue) }}
         run: |
           python3 - << 'EOF'
-          import os, json, urllib.request
+          import os, json, urllib.request, urllib.error
 
-          NOTION_KEY = os.environ["NOTION_KEY"]
-          NOTION_DB = os.environ["NOTION_DB"]
-          GH_TOKEN = os.environ["GH_TOKEN"]
+          NOTION_KEY = os.environ["NOTION_KEY"].strip()
+          RAW_ID = os.environ["NOTION_DB"].strip().split("?")[0].split("-")[-1]
+          GH_TOKEN = os.environ["GH_TOKEN"].strip()
           REPO = os.environ["REPO"]
           EVENT_NAME = os.environ["EVENT_NAME"]
 
-          # Adjust these 3 strings ONLY if your Notion board uses different option names:
           OPEN_STATUS = "Not started"
-          CLOSED_STATUS = "Done"      # Falls back to the last status column automatically if not found
-          GROUP_TAG = "Sofware"       # Matches the spelling on your Master Project Board
+          CLOSED_STATUS = "Done"
+          GROUP_TAG = "Sofware"
 
           def notion_req(path, method="GET", data=None):
               url = f"https://api.notion.com/v1/{path}"
@@ -41,13 +40,41 @@ jobs:
               }
               body = json.dumps(data).encode("utf-8") if data is not None else None
               req = urllib.request.Request(url, data=body, headers=headers, method=method)
-              with urllib.request.urlopen(req) as res:
-                  return json.loads(res.read().decode("utf-8"))
+              try:
+                  with urllib.request.urlopen(req) as res:
+                      return json.loads(res.read().decode("utf-8"))
+              except urllib.error.HTTPError as e:
+                  err_body = e.read().decode("utf-8", errors="replace")
+                  print(f"Notion API {e.code} on {method} {path}: {err_body}")
+                  raise
 
-          # 1. Auto-detect Notion Database schema (Title, Status, and Sub-team group properties)
-          db = notion_req(f"databases/{NOTION_DB}")
+          # 1. Resolve Database (automatically handles if RAW_ID is a container Page ID)
+          try:
+              db = notion_req(f"databases/{RAW_ID}")
+              NOTION_DB = db["id"]
+          except urllib.error.HTTPError:
+              print("Provided ID is a Page or View, searching for underlying Database...")
+              NOTION_DB = None
+              try:
+                  children = notion_req(f"blocks/{RAW_ID}/children")
+                  for b in children.get("results", []):
+                      if b["type"] == "child_database":
+                          NOTION_DB = b["id"]
+                          break
+              except urllib.error.HTTPError:
+                  pass
+              if not NOTION_DB:
+                  search = notion_req("search", "POST", {"filter": {"value": "database", "property": "object"}})
+                  if not search.get("results"):
+                      raise RuntimeError(
+                          "No Notion databases found! Wait: is your board a Linked View of another database? "
+                          "If so, make sure that source database is also added under 'Content access' in your Notion integration settings."
+                      )
+                  NOTION_DB = search["results"][0]["id"]
+              db = notion_req(f"databases/{NOTION_DB}")
+              print(f"Resolved actual Database ID: {NOTION_DB}")
+
           props = db["properties"]
-
           title_prop = next(k for k, v in props.items() if v["type"] == "title")
           status_prop, status_type, closed_opt = None, None, CLOSED_STATUS
           group_prop, group_type = None, None
@@ -75,7 +102,6 @@ jobs:
               card_title = f"{prefix} {title}"
               target_status = OPEN_STATUS if state == "open" else closed_opt
 
-              # Check if card already exists on the board
               q = notion_req(f"databases/{NOTION_DB}/query", "POST", {
                   "filter": {"property": title_prop, "title": {"starts_with": prefix}}
               })
@@ -106,7 +132,6 @@ jobs:
                   })
                   print(f"Created {card_title} -> {target_status}")
 
-          # 2. Sync either all open issues (manual trigger) or the single triggered issue
           if EVENT_NAME == "workflow_dispatch":
               req = urllib.request.Request(
                   f"https://api.github.com/repos/{REPO}/issues?state=open&per_page=100",
