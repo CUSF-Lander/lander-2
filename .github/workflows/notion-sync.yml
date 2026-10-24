@@ -1,0 +1,120 @@
+name: Sync Issues to Notion
+
+on:
+  issues:
+    types: [opened, edited, closed, reopened]
+  workflow_dispatch: # Lets you click "Run workflow" in GitHub to import all existing open issues
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync GitHub Issue(s) to Notion Board
+        env:
+          NOTION_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DB: ${{ secrets.NOTION_DATABASE_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          ISSUE_JSON: ${{ toJson(github.event.issue) }}
+        run: |
+          python3 - << 'EOF'
+          import os, json, urllib.request
+
+          NOTION_KEY = os.environ["NOTION_KEY"]
+          NOTION_DB = os.environ["NOTION_DB"]
+          GH_TOKEN = os.environ["GH_TOKEN"]
+          REPO = os.environ["REPO"]
+          EVENT_NAME = os.environ["EVENT_NAME"]
+
+          # Adjust these 3 strings ONLY if your Notion board uses different option names:
+          OPEN_STATUS = "Not started"
+          CLOSED_STATUS = "Done"      # Falls back to the last status column automatically if not found
+          GROUP_TAG = "Sofware"       # Matches the spelling on your Master Project Board
+
+          def notion_req(path, method="GET", data=None):
+              url = f"https://api.notion.com/v1/{path}"
+              headers = {
+                  "Authorization": f"Bearer {NOTION_KEY}",
+                  "Notion-Version": "2022-06-28",
+                  "Content-Type": "application/json"
+              }
+              body = json.dumps(data).encode("utf-8") if data is not None else None
+              req = urllib.request.Request(url, data=body, headers=headers, method=method)
+              with urllib.request.urlopen(req) as res:
+                  return json.loads(res.read().decode("utf-8"))
+
+          # 1. Auto-detect Notion Database schema (Title, Status, and Sub-team group properties)
+          db = notion_req(f"databases/{NOTION_DB}")
+          props = db["properties"]
+
+          title_prop = next(k for k, v in props.items() if v["type"] == "title")
+          status_prop, status_type, closed_opt = None, None, CLOSED_STATUS
+          group_prop, group_type = None, None
+
+          for k, v in props.items():
+              if v["type"] in ("status", "select"):
+                  opts = [o["name"] for o in v[v["type"]]["options"]]
+                  if OPEN_STATUS in opts:
+                      status_prop, status_type = k, v["type"]
+                      if CLOSED_STATUS not in opts and opts:
+                          closed_opt = opts[-1]
+                  if GROUP_TAG in opts:
+                      group_prop, group_type = k, v["type"]
+              elif v["type"] == "multi_select":
+                  opts = [o["name"] for o in v["multi_select"]["options"]]
+                  if GROUP_TAG in opts:
+                      group_prop, group_type = k, "multi_select"
+
+          def sync_issue(issue):
+              num = issue["number"]
+              title = issue["title"]
+              url = issue["html_url"]
+              state = issue["state"]
+              prefix = f"[#{num}]"
+              card_title = f"{prefix} {title}"
+              target_status = OPEN_STATUS if state == "open" else closed_opt
+
+              # Check if card already exists on the board
+              q = notion_req(f"databases/{NOTION_DB}/query", "POST", {
+                  "filter": {"property": title_prop, "title": {"starts_with": prefix}}
+              })
+
+              payload_props = {
+                  title_prop: {"title": [{"text": {"content": card_title}}]}
+              }
+              if status_prop:
+                  payload_props[status_prop] = {status_type: {"name": target_status}}
+              if group_prop:
+                  payload_props[group_prop] = (
+                      {"multi_select": [{"name": GROUP_TAG}]}
+                      if group_type == "multi_select"
+                      else {group_type: {"name": GROUP_TAG}}
+                  )
+
+              if q["results"]:
+                  page_id = q["results"][0]["id"]
+                  notion_req(f"pages/{page_id}", "PATCH", {"properties": payload_props})
+                  print(f"Updated {card_title} -> {target_status}")
+              else:
+                  notion_req("pages", "POST", {
+                      "parent": {"database_id": NOTION_DB},
+                      "properties": payload_props,
+                      "children": [
+                          {"object": "block", "type": "bookmark", "bookmark": {"url": url}}
+                      ]
+                  })
+                  print(f"Created {card_title} -> {target_status}")
+
+          # 2. Sync either all open issues (manual trigger) or the single triggered issue
+          if EVENT_NAME == "workflow_dispatch":
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{REPO}/issues?state=open&per_page=100",
+                  headers={"Authorization": f"Bearer {GH_TOKEN}", "Accept": "application/vnd.github+json"}
+              )
+              issues = [i for i in json.loads(urllib.request.urlopen(req).read().decode("utf-8")) if "pull_request" not in i]
+              for i in reversed(issues):
+                  sync_issue(i)
+          else:
+              sync_issue(json.loads(os.environ["ISSUE_JSON"]))
+          EOF
