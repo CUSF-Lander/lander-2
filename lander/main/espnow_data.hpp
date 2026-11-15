@@ -27,6 +27,18 @@ typedef struct __attribute__((packed)) {
     //environment
     float pressure;
 
+    //esc current sense [A]
+    float current_a;
+
+    //kalman state estimate (position above is the same filter's x/y/z)
+    float vel_x;
+    float vel_y;
+    float vel_z;
+    float altitude;   //baro altitude relative to launch zero [m]
+    float est_roll;   //kalman attitude estimate [deg]
+    float est_pitch;
+    float est_yaw;
+
 } esp_now_data_t;
 
 //ESP-NOW command structure for ground station to lander

@@ -3,3 +3,17 @@
 
 # Target chip
 CONFIG_IDF_TARGET="esp32"
+
+# Match receiver runtime baud so boot messages align with the GUI.
+# The baud rate is only user-settable when the console is CUSTOM: with
+# CONFIG_ESP_CONSOLE_UART_DEFAULT the rate is forced to 115200 and any value
+# set here or in sdkconfig is discarded on the next build. At 115200 the UART
+# caps output at ~11.5 kB/s, which throttles the 100 Hz telemetry JSON (214 B
+# per packet) to ~52 lines/s and drops the rest in the receive path.
+CONFIG_ESP_CONSOLE_UART_CUSTOM=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600
+
+# 4 MB flash part; without this the image header says 2 MB and the bootloader
+# warns that the detected size (4096k) is larger than the header.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"

@@ -13,6 +13,7 @@
 #include "motor_init.hpp"
 #include "i2c/bmp390.hpp"
 #include "espnow_init.hpp"
+#include "current_sense.hpp"
 #include "config.hpp"
 #include "comms/comm.h"
 #include "comms/uart.h"
@@ -21,6 +22,11 @@
 #include "driver/i2c.h"
 
 static const char* TAG = "Main";
+
+// Incremented by bmp390_task on every successful barometer read. The state
+// estimator runs at 100 Hz but the barometer at 2 Hz, so a repeated sample
+// must not be re-applied as if it were new data.
+static std::atomic<uint32_t> baro_sample_count(0);
 
 // Callback for GPS RTK corrections
 void on_correction_received(const uint8_t* data, size_t len, const uint8_t* src_mac) {
@@ -122,6 +128,16 @@ void state_estimation(void *pvParameters)
 {
     constexpr uint32_t dt_ms = 10;
     constexpr float deg2rad = static_cast<float>(M_PI / 180.0);
+    constexpr float rad2deg = static_cast<float>(180.0 / M_PI);
+
+    // Divergence guard bounds. The filter uses constant, pre-computed gains
+    // with no covariance propagation and no innovation gating, and the state is
+    // 32-bit float, so a bad measurement or a long dropout can make the double
+    // integration run away (bench logs show positions of 1e30 m). Anything
+    // beyond these limits is not a physical state of this vehicle.
+    constexpr float POSITION_LIMIT_M   = 10000.0f;
+    constexpr float VELOCITY_LIMIT_MPS = 1000.0f;
+    constexpr float ATTITUDE_LIMIT_RAD = 4.0f * static_cast<float>(M_PI);
 
     // -------------------------------------------------------------------------
     // Vehicle physical constants — from David's Simulink model (07/08/2026)
@@ -212,7 +228,16 @@ void state_estimation(void *pvParameters)
 
     // GPS freshness tracking
     static float last_gps[3] = {0.0f, 0.0f, 0.0f};
+    static uint32_t last_baro_count = 0;
     uint32_t handled_reset_generation = flight_state_reset_generation.load();
+
+    // vTaskDelay() adds the loop's compute time to every period, but the model
+    // in update_kalman_matrices() assumes exactly dt = 0.01 s. vTaskDelayUntil()
+    // holds the 100 Hz cadence, and the achieved rate is logged so it can be
+    // checked on the bench.
+    TickType_t last_wake = xTaskGetTickCount();
+    uint32_t rate_iterations = 0;
+    int64_t rate_window_start_us = esp_timer_get_time();
 
     while (1)
     {
@@ -236,7 +261,11 @@ void state_estimation(void *pvParameters)
         double gps_x_d    = latest_gps_position.x;
         double gps_y_d    = latest_gps_position.y;
         double gps_z_d    = latest_gps_position.z;
+        const uint32_t baro_count = baro_sample_count.load();
         portEXIT_CRITICAL(&global_spinlock);
+
+        const bool baro_fresh = (baro_count != last_baro_count);
+        last_baro_count = baro_count;
 
         float gps_x = static_cast<float>(gps_x_d);
         float gps_y = static_cast<float>(gps_y_d);
@@ -364,6 +393,11 @@ void state_estimation(void *pvParameters)
         dspm_mult_f32(H_ptr, Xpre, HXpre, meas_dim, 18, 1);  // H(m×18) * Xpre(18×1)
         for (int i = 0; i < meas_dim; i++) innov[i] = Z[i] - HXpre[i];
 
+        // Row 9 is barometric altitude, which only changes at 2 Hz. Feeding the
+        // same value at 100 Hz would apply the baro gain 50 times per sample and
+        // drag z toward a half-second-old altitude, so drop stale innovations.
+        if (!baro_fresh) innov[9] = 0.0f;
+
         // -----------------------------------------------------------------
         // 8. Update: X = Xpre + Kf*innov
         //    No gravity correction: BNO08x linear_accel is already gravity-free.
@@ -372,6 +406,46 @@ void state_estimation(void *pvParameters)
 
         dspm_mult_f32(Kf_ptr, innov, Kf_innov, 18, meas_dim, 1);  // Kf(18×m) * innov(m×1)
         for (int i = 0; i < 18; i++) X[i] = Xpre[i] + Kf_innov[i];
+
+        // -----------------------------------------------------------------
+        // 8b. Divergence guard: drop non-finite or non-physical components
+        //     instead of publishing them. Without GPS the horizontal position is
+        //     unobservable, so this filter can and does run away; the controller
+        //     and the ground station must never see 1e30 m.
+        // -----------------------------------------------------------------
+        {
+            static int64_t last_guard_log_us = 0;
+            bool rejected = false;
+
+            for (int i = 0; i < 18; i++) {
+                if (!std::isfinite(X[i])) {
+                    X[i] = 0.0f;
+                    rejected = true;
+                }
+            }
+            for (int i = 0; i < 3; i++) {
+                if (!(fabsf(X[i]) <= POSITION_LIMIT_M)) {
+                    X[i] = 0.0f;
+                    rejected = true;
+                }
+                if (!(fabsf(X[3 + i]) <= ATTITUDE_LIMIT_RAD)) {
+                    X[3 + i] = 0.0f;
+                    rejected = true;
+                }
+                if (!(fabsf(X[6 + i]) <= VELOCITY_LIMIT_MPS)) {
+                    X[6 + i] = 0.0f;
+                    rejected = true;
+                }
+            }
+
+            const int64_t now_us = esp_timer_get_time();
+            if (rejected && (now_us - last_guard_log_us) > 1000000LL) {
+                last_guard_log_us = now_us;
+                ESP_LOGE(TAG,
+                         "State estimator divergence rejected; "
+                         "reset the offending position/velocity/attitude states");
+            }
+        }
 
         // -----------------------------------------------------------------
         // 9. Write estimated state to globals
@@ -383,9 +457,22 @@ void state_estimation(void *pvParameters)
         latest_velocity.x = static_cast<double>(X[6]);
         latest_velocity.y = static_cast<double>(X[7]);
         latest_velocity.z = static_cast<double>(X[8]);
+        latest_kalman_attitude_deg.x = static_cast<double>(X[3] * rad2deg);
+        latest_kalman_attitude_deg.y = static_cast<double>(X[4] * rad2deg);
+        latest_kalman_attitude_deg.z = static_cast<double>(X[5] * rad2deg);
         portEXIT_CRITICAL(&global_spinlock);
 
-        vTaskDelay(pdMS_TO_TICKS(dt_ms));
+        ++rate_iterations;
+        const int64_t rate_now_us = esp_timer_get_time();
+        if ((rate_now_us - rate_window_start_us) >= 5000000LL) {
+            const float elapsed_s = (rate_now_us - rate_window_start_us) / 1e6f;
+            ESP_LOGI(TAG, "State estimation running at %.1f Hz (target %u Hz)",
+                     rate_iterations / elapsed_s, 1000u / dt_ms);
+            rate_iterations = 0;
+            rate_window_start_us = rate_now_us;
+        }
+
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(dt_ms));
     }
 }
 
@@ -425,6 +512,9 @@ void position_controller(void *pvParameters)
     static float error_integral_y = 0.0f;
     uint32_t handled_reset_generation = flight_state_reset_generation.load();
 
+    // Fixed 20 ms cadence; CONTROL_LOOP_INTERVAL assumes exactly this period.
+    TickType_t last_wake = xTaskGetTickCount();
+
     while (1)
     {
         const uint32_t requested_reset = flight_state_reset_generation.load();
@@ -436,7 +526,7 @@ void position_controller(void *pvParameters)
             U_pos = {0.0f, 0.0f};
             portEXIT_CRITICAL(&global_spinlock);
             handled_reset_generation = requested_reset;
-            vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
+            vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(PERIOD_MS));
             continue;
         }
 
@@ -504,7 +594,7 @@ void position_controller(void *pvParameters)
         U_pos.pitch = output[1];
         portEXIT_CRITICAL(&global_spinlock);
 
-        vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(PERIOD_MS));
     }
 }
 
@@ -574,6 +664,9 @@ void hover_controller(void *pvParameters)
     uint32_t handled_reset_generation = flight_state_reset_generation.load();
     int64_t last_control_log_us = 0;
 
+    // Fixed 20 ms cadence.
+    TickType_t last_wake = xTaskGetTickCount();
+
     while (1)
     {
         const uint32_t requested_reset = flight_state_reset_generation.load();
@@ -586,7 +679,7 @@ void hover_controller(void *pvParameters)
             U_hov = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
             portEXIT_CRITICAL(&global_spinlock);
             handled_reset_generation = requested_reset;
-            vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
+            vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(PERIOD_MS));
             continue;
         }
 
@@ -765,21 +858,25 @@ void hover_controller(void *pvParameters)
             last_control_log_us = now_us;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(PERIOD_MS));
     }
 }
 
 void esp_now_task(void *pvParameters)
 {
+    // Hold a fixed 100 Hz cadence instead of sleeping 10 ms after every send,
+    // which made the real rate depend on how long each send took.
+    TickType_t last_wake = xTaskGetTickCount();
     while(1) {
         // Send telemetry regardless of ESTOP status so the UI can show state
         esp_now_send_data();
-        vTaskDelay(pdMS_TO_TICKS(10)); //send every 10ms
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(10));
     }
 }
 
 void bmp390_task(void *pvParameters)
 {
+    TickType_t last_wake = xTaskGetTickCount();
     while (1)
     {
         double t, p, a;
@@ -792,6 +889,9 @@ void bmp390_task(void *pvParameters)
             altitude = a;
             portEXIT_CRITICAL(&global_spinlock);
 
+            // Tell the state estimator this is a new baro sample (2 Hz).
+            baro_sample_count.fetch_add(1);
+
             if (!estop_triggered) {
                 ESP_LOGI(TAG, "Temperature: %.2f °C, Pressure: %.2f Pa, Altitude: %.2f m", t, p, a);
             }
@@ -800,7 +900,7 @@ void bmp390_task(void *pvParameters)
                 ESP_LOGE(TAG, "Failed to read data from BMP390 sensor");
             }
         } 
-        vTaskDelay(pdMS_TO_TICKS(500)); //Run every 0.5 seconds?
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(500)); // 2 Hz baro samples
     }
 }
 
@@ -1140,6 +1240,7 @@ extern "C" void app_main(void)
         return;
     }
     init_espnow_sender();
+    init_current_sense();
 
     // Start UART for GPS and hook the correction callback
     Uart::init();

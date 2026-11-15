@@ -47,6 +47,16 @@ typedef struct {
 
 extern latest_lin_velocity_t latest_velocity;
 
+// Attitude states [deg] as estimated by the Kalman filter. Kept separate from
+// latest_euler_data, which is the raw IMU measurement.
+typedef struct {
+    double x;
+    double y;
+    double z;
+} kalman_attitude_deg_t;
+
+extern kalman_attitude_deg_t latest_kalman_attitude_deg;
+
 typedef struct {
     double x;
     double y;

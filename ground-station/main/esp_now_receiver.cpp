@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 #include <unistd.h>
 #include "espnow_data.hpp"
 
@@ -22,6 +23,14 @@ static const char *TAG = "ESP-NOW-RX";
 #define HW_ESTOP_PIN (gpio_num_t)0
 
 #define LANDER_TIMEOUT_MS 3000
+
+// Fail-safe dead-man. Heartbeats are the lander's only proof that the ground
+// station is still under an operator, so they are sent only while the GUI keeps
+// the serial link alive. If the GUI dies, the USB cable is pulled or the PC
+// hangs, heartbeats stop and the lander latches ESTOP on its own 500 ms timer.
+#define GUI_KEEPALIVE_TIMEOUT_MS 600
+static volatile int64_t last_gui_activity_us = 0;
+
 static esp_timer_handle_t lander_timeout_timer = NULL;
 static bool lander_device_active = false;
 
@@ -68,6 +77,23 @@ static void init_lander_timeout_timer(void)
     };
     esp_timer_create(&timer_args, &lander_timeout_timer);
     ESP_LOGI(TAG, "Lander timeout timer initialized (%d ms)", LANDER_TIMEOUT_MS);
+}
+
+// A diverged estimator can emit values near float max. Printing those at 100 Hz
+// blocks the serial link and floods the GUI, so bound what can reach it. A
+// clamped value is still obviously wrong (1e6 m), which is what we want.
+static float json_bounded(float v)
+{
+    if (!isfinite(v)) {
+        return 0.0f;
+    }
+    if (v > 1.0e6f) {
+        return 1.0e6f;
+    }
+    if (v < -1.0e6f) {
+        return -1.0e6f;
+    }
+    return v;
 }
 
 static uint32_t packets_received = 0;
@@ -179,16 +205,27 @@ void esp_now_advanced_recv_callback(const esp_now_recv_info_t *recv_info, const 
             success_rate = (window_received * 100.0f) / window_total;
         }
 
-        if (packets_received % 50 == 0) {
+        // Print every packet received (full 100Hz telemetry rate)
+        {
             printf("{\"type\":\"telemetry\",\"seq\":%lu,\"rssi\":%d,\"success_rate\":%.1f,\"lost\":%ld,"
                    "\"roll\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,"
                    "\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,"
-                   "\"px\":%.2f,\"py\":%.2f,\"pz\":%.2f,\"pressure\":%.0f}\n",
+                   "\"px\":%.2f,\"py\":%.2f,\"pz\":%.2f,\"pressure\":%.0f,"
+                   "\"current_a\":%.2f,"
+                   "\"vx\":%.3f,\"vy\":%.3f,\"vz\":%.3f,\"alt\":%.2f,"
+                   "\"kroll\":%.2f,\"kpitch\":%.2f,\"kyaw\":%.2f}\n",
                    received_data->sequence, recv_info->rx_ctrl->rssi, success_rate, packets_lost,
                    received_data->roll, received_data->pitch, received_data->yaw,
                    received_data->lin_acc_x, received_data->lin_acc_y, received_data->lin_acc_z,
-                   received_data->pos_x, received_data->pos_y, received_data->pos_z,
-                   received_data->pressure);
+                   json_bounded(received_data->pos_x),
+                   json_bounded(received_data->pos_y),
+                   json_bounded(received_data->pos_z),
+                   received_data->pressure, received_data->current_a,
+                   json_bounded(received_data->vel_x),
+                   json_bounded(received_data->vel_y),
+                   json_bounded(received_data->vel_z),
+                   json_bounded(received_data->altitude),
+                   received_data->est_roll, received_data->est_pitch, received_data->est_yaw);
             fflush(stdout);
         }
                
@@ -212,22 +249,48 @@ void esp_now_advanced_recv_callback(const esp_now_recv_info_t *recv_info, const 
     }
 }
 
+// Set while an ESTOP is awaiting its transmit confirmation. ESP-NOW reports
+// ESP_NOW_SEND_SUCCESS only once the peer has acknowledged the frame, so this
+// is the difference between "handed to the radio" and "reached the lander".
+// Heartbeats also land here, but they travel to the same peer, so an ACK for one
+// of them still proves the command path is alive.
+static volatile bool estop_awaiting_status = false;
+
+void esp_now_send_status_cb(const wifi_tx_info_t *tx_info, esp_now_send_status_t status)
+{
+    (void)tx_info;
+
+    if (!estop_awaiting_status) {
+        return;
+    }
+    estop_awaiting_status = false;
+
+    if (status == ESP_NOW_SEND_SUCCESS) {
+        printf("{\"type\":\"estop_status\",\"status\":\"sent\"}\n");
+    } else {
+        printf("{\"type\":\"estop_status\",\"status\":\"error\"}\n");
+    }
+    fflush(stdout);
+}
+
 void esp_now_send_estop(void)
 {
     if (!lander_mac_known) {
         ESP_LOGE(TAG, "Cannot send ESTOP: Lander MAC unknown");
+        printf("{\"type\":\"estop_status\",\"status\":\"error\"}\n");
+        fflush(stdout);
         return;
     }
     
     esp_now_cmd_t cmd = {}; cmd.type = 0x05;
     cmd.command = 1;
-    
+
+    estop_awaiting_status = true;
     esp_err_t result = esp_now_send(lander_mac, (uint8_t *)&cmd, sizeof(cmd));
     if (result == ESP_OK) {
-        ESP_LOGI(TAG, "ESTOP command sent successfully");
-        printf("{\"type\":\"estop_status\",\"status\":\"sent\"}\n");
-        fflush(stdout);
+        ESP_LOGI(TAG, "ESTOP command queued; awaiting delivery confirmation");
     } else {
+        estop_awaiting_status = false;
         ESP_LOGE(TAG, "Error sending ESTOP command: %s", esp_err_to_name(result));
         printf("{\"type\":\"estop_status\",\"status\":\"error\"}\n");
         fflush(stdout);
@@ -360,6 +423,9 @@ static void sw_estop_task(void *pvParameter)
         if (c != EOF) {
             if (c == '\n' || c == '\r') {
                 line[pos] = '\0';
+                // Any complete line, including the GUI's periodic PING, proves an
+                // operator session is still attached. Heartbeats depend on this.
+                last_gui_activity_us = esp_timer_get_time();
                 if (strcmp(line, "ESTOP") == 0) {
                     ESP_LOGW(TAG, "SW ESTOP TRIGGERED!");
                     esp_now_send_estop();
@@ -398,16 +464,35 @@ static void sw_estop_task(void *pvParameter)
 
 static void heartbeat_task(void *pvParameter)
 {
+    bool streaming = false;
+
     while (1) {
-        esp_now_send_heartbeat();
-        vTaskDelay(pdMS_TO_TICKS(100)); // 10Hz heartbeat
+        const int64_t now = esp_timer_get_time();
+        const int64_t last_activity = last_gui_activity_us;
+        const bool gui_alive = (last_activity != 0)
+            && ((now - last_activity) <= (int64_t)GUI_KEEPALIVE_TIMEOUT_MS * 1000);
+
+        if (gui_alive && lander_mac_known) {
+            esp_now_send_heartbeat();
+            if (!streaming) {
+                ESP_LOGW(TAG, "GUI keepalive present: heartbeats enabled");
+                streaming = true;
+            }
+        } else if (streaming) {
+            ESP_LOGE(TAG,
+                     "GUI keepalive lost: heartbeats stopped, lander will ESTOP within 500 ms");
+            streaming = false;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100)); // 10Hz heartbeat while the GUI is alive
     }
 }
 
 void init_estop_task(void)
 {
     if (!uart_is_driver_installed(UART_NUM_0)) {
-        uart_driver_install(UART_NUM_0, 256, 0, 0, NULL, 0);
+        uart_driver_install(UART_NUM_0, 256, 2048, 0, NULL, 0);
+        uart_set_baudrate(UART_NUM_0, 921600); // match GUI serial speed for 100Hz telemetry
         uart_vfs_dev_use_driver(UART_NUM_0);
     }
 

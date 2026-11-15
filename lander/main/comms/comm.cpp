@@ -212,6 +212,14 @@ esp_err_t esp_now_init()
 // Public API — Peer management
 // ---------------------------------------------------------------------------
 
+static bool is_broadcast(const uint8_t* mac_addr)
+{
+    for (int i = 0; i < 6; i++) {
+        if (mac_addr[i] != 0xFF) return false;
+    }
+    return true;
+}
+
 esp_err_t add_peer(const uint8_t* mac_addr)
 {
     // Register with ESP-NOW only if not already present
@@ -230,6 +238,14 @@ esp_err_t add_peer(const uint8_t* mac_addr)
         ESP_LOGI(TAG, "Peer registered: %02x:%02x:%02x:%02x:%02x:%02x",
                  mac_addr[0], mac_addr[1], mac_addr[2],
                  mac_addr[3], mac_addr[4], mac_addr[5]);
+    }
+
+    // A broadcast address is only registered so the first sends have a valid
+    // peer. It must not become the send target: recv_cb's auto-learn is gated on
+    // !s_peer_known, so treating broadcast as known would keep every frame on
+    // broadcast forever (no ACK, no real link statistics).
+    if (is_broadcast(mac_addr)) {
+        return ESP_OK;
     }
 
     // Set (or update) the send-target MAC

@@ -104,7 +104,10 @@ class GroundStationUI:
                 "timestamp", "seq", "rssi", "success_rate", "lost",
                 "roll", "pitch", "yaw",
                 "ax", "ay", "az",
-                "px", "py", "pz", "pressure"
+                "px", "py", "pz", "pressure",
+                "current_a",
+                "vx", "vy", "vz", "alt",
+                "kroll", "kpitch", "kyaw"
             ])
             self.csv_file.flush()
 
@@ -162,6 +165,14 @@ class GroundStationUI:
         self.lbl_pos.pack(anchor=W, pady=3)
         self.lbl_pressure = tb.Label(telem_card, text="Baro Pressure: -- Pa", font=("Courier", 14), bootstyle=WARNING)
         self.lbl_pressure.pack(anchor=W, pady=3)
+        self.lbl_current = tb.Label(telem_card, text="ESC Current:   -- A", font=("Courier", 14), bootstyle=DANGER)
+        self.lbl_current.pack(anchor=W, pady=3)
+        self.lbl_vel = tb.Label(telem_card, text="KF Velocity:  -- / -- / --", font=("Courier", 14))
+        self.lbl_vel.pack(anchor=W, pady=3)
+        self.lbl_alt = tb.Label(telem_card, text="KF Altitude:  -- m", font=("Courier", 14))
+        self.lbl_alt.pack(anchor=W, pady=3)
+        self.lbl_kalman_att = tb.Label(telem_card, text="KF Attitude:  -- / -- / --", font=("Courier", 14))
+        self.lbl_kalman_att.pack(anchor=W, pady=3)
         
         #graphs Frame
         graph_frame = tb.Frame(self.root, padding=10)
@@ -193,6 +204,10 @@ class GroundStationUI:
         self.pos_line, = self.ax_pos.plot([], [], [], '#00FFCC', marker='.', linestyle='-', markersize=3, linewidth=1.5)
         
         self.canvas = FigureCanvasTkAgg(self.fig, master=graph_frame)
+        # Ask for only ~200 px of height. The canvas still expands into spare
+        # space, but its request no longer pushes the control rows below it off
+        # the bottom of a short window.
+        self.canvas.get_tk_widget().configure(height=200)
         self.canvas.get_tk_widget().pack(fill=BOTH, expand=True)
 
         pin_cfg_frame = tb.Labelframe(self.root, text=" Motor Pin Override ", padding=10)
@@ -264,6 +279,7 @@ class GroundStationUI:
     def toggle_connection(self):
         if self.serial_port and self.serial_port.is_open:
             self.is_reading = False
+            self.send_estop_best_effort()
             self.serial_port.close()
             self.serial_port = None
             self.connect_btn.config(text="Connect", bootstyle=SUCCESS)
@@ -273,12 +289,35 @@ class GroundStationUI:
                 messagebox.showerror("Error", "Please select a port")
                 return
             try:
-                self.serial_port = serial.Serial(port, 115200, timeout=1)
+                self.serial_port = serial.Serial(port, 921600, timeout=1)
                 self.is_reading = True
                 self.connect_btn.config(text="Disconnect", bootstyle=DANGER)
                 threading.Thread(target=self.read_serial, daemon=True).start()
+                self.start_keepalive()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to connect: {e}")
+
+    def start_keepalive(self):
+        # The ground station only heartbeats while it sees serial activity, so
+        # the lander ESTOPs if this GUI stops pinging. Without the PING the
+        # firmware would keep the drone armed with no operator attached.
+        def _tick():
+            if self.serial_port and self.serial_port.is_open:
+                try:
+                    self.serial_port.write(b"PING\n")
+                except Exception:
+                    return
+                self.root.after(200, _tick)
+
+        self.root.after(200, _tick)
+
+    def send_estop_best_effort(self):
+        if self.serial_port and self.serial_port.is_open:
+            try:
+                self.serial_port.write(b"ESTOP\n")
+                self.serial_port.flush()
+            except Exception:
+                pass
 
     def read_serial(self):
         while self.is_reading:
@@ -303,6 +342,7 @@ class GroundStationUI:
 
     def handle_disconnect(self):
         self.is_reading = False
+        self.send_estop_best_effort()
         if self.serial_port:
             self.serial_port.close()
             self.serial_port = None
@@ -374,6 +414,16 @@ class GroundStationUI:
             self.lbl_accel.config(text=f"Accel (X/Y/Z):  {data.get('ax',0):7.2f} / {data.get('ay',0):7.2f} / {data.get('az',0):7.2f}")
             self.lbl_pos.config(text=f"Pos.  (X/Y/Z):  {px:7.2f} / {py:7.2f} / {pz:7.2f}")
             self.lbl_pressure.config(text=f"Baro Pressure: {data.get('pressure',0):.0f} Pa")
+
+            current_a = data.get('current_a')
+            if current_a is not None:
+                self.lbl_current.config(text=f"ESC Current: {current_a:6.2f} A")
+
+            vx, vy, vz = data.get('vx', 0), data.get('vy', 0), data.get('vz', 0)
+            self.lbl_vel.config(text=f"KF Velocity:  {vx:7.2f} / {vy:7.2f} / {vz:7.2f}")
+            self.lbl_alt.config(text=f"KF Altitude:  {data.get('alt', 0):7.2f} m")
+            self.lbl_kalman_att.config(
+                text=f"KF Attitude:  {data.get('kroll', 0):7.2f} / {data.get('kpitch', 0):7.2f} / {data.get('kyaw', 0):7.2f}")
             
             curr_time = time.time()
             if curr_time - self.last_draw_time >= self.draw_interval:
@@ -387,18 +437,23 @@ class GroundStationUI:
                     time.time(), data.get('seq'), data.get('rssi'), data.get('success_rate'), data.get('lost'),
                     roll, pitch, yaw,
                     data.get('ax'), data.get('ay'), data.get('az'),
-                    px, py, pz, data.get('pressure')
+                    px, py, pz, data.get('pressure'),
+                    current_a if current_a is not None else '',
+                    vx, vy, vz, data.get('alt'),
+                    data.get('kroll'), data.get('kpitch'), data.get('kyaw')
                 ])
                 self.csv_file.flush()
-                
+
         elif data.get("type") == "bandwidth":
             self.lbl_bw.config(text=f"Bandwidth: {data.get('kbps', 0):.2f} kbps")
             
         elif data.get("type") == "estop_status":
+            # "sent" now means the lander acknowledged the frame, not merely
+            # that it was queued to the radio.
             if data.get("status") == "sent":
-                self.lbl_estop_status.config(text="ESTOP System: SIGNAL DEPLOYED", bootstyle=WARNING)
+                self.lbl_estop_status.config(text="ESTOP System: DELIVERED TO LANDER", bootstyle=SUCCESS)
             else:
-                self.lbl_estop_status.config(text="ESTOP System: SIGNAL FAILURE", bootstyle=DANGER)
+                self.lbl_estop_status.config(text="ESTOP System: NOT DELIVERED", bootstyle=DANGER)
 
         elif data.get("type") == "zero_imu_status":
             if data.get("status") == "sent":
@@ -413,7 +468,7 @@ class GroundStationUI:
                 self.serial_port.write(b"ESTOP\n")
                 self.power_percent_var.set(0)
                 self.power_label_var.set("Power: 0 % (ESTOP)")
-                self.lbl_estop_status.config(text="ESTOP System: TRIGGERED!", bootstyle=DANGER)
+                self.lbl_estop_status.config(text="ESTOP System: SENDING...", bootstyle=WARNING)
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to send ESTOP: {e}")
         else:
@@ -487,6 +542,7 @@ class GroundStationUI:
     def on_closing(self):
         self.is_reading = False
         if self.serial_port and self.serial_port.is_open:
+            self.send_estop_best_effort()
             self.serial_port.close()
         if self.csv_file:
             self.csv_file.close()

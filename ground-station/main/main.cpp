@@ -65,6 +65,7 @@ esp_err_t esp_now_init_receiver(void)
 {
     ESP_ERROR_CHECK(esp_now_init());
     ESP_ERROR_CHECK(esp_now_register_recv_cb(esp_now_advanced_recv_callback));
+    ESP_ERROR_CHECK(esp_now_register_send_cb(esp_now_send_status_cb));
     
     ESP_LOGI(TAG, "ESP-NOW receiver initialized");
     return ESP_OK;

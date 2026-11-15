@@ -8,6 +8,16 @@ CONFIG_IDF_TARGET="esp32"
 # than v5 and overflows the default single-app (~1 MB) partition.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# 4 MB flash part; without this the image header says 2 MB and the bootloader
+# warns that the detected size (4096k) is larger than the header.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# 1 kHz tick. At the default 100 Hz a 10 ms delay can only be whole ticks, so a
+# nominal 100 Hz loop jitters by a full period while the Kalman model assumes an
+# exact dt = 0.01 s.
+CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP32_BNO08X_GPIO_SCL=5
 CONFIG_ESP32_BNO08X_GPIO_DI=19
 CONFIG_ESP32_BNO08X_GPIO_SDA=21

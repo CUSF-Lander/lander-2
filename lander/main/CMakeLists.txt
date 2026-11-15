@@ -5,6 +5,7 @@ idf_component_register(SRCS "main.cpp"
                          "globalvars.cpp"
                          "config.cpp"
                          "espnow_init.cpp"
+                         "current_sense.cpp"
                          "i2c/i2c_setup.cpp"
                          "i2c/servo.cpp"
                          "i2c/bmp390.cpp"
@@ -13,4 +14,4 @@ idf_component_register(SRCS "main.cpp"
                          "comms/Parser.cpp"
                     INCLUDE_DIRS "i2c" "comms"
                     REQUIRES esp32_BNO08x esp_wifi esp32-dshot-master nvs_flash esp-dsp
-                             esp_driver_gpio esp_driver_uart esp_timer driver)
+                             esp_adc esp_driver_gpio esp_driver_uart esp_timer driver)

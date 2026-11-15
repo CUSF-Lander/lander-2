@@ -31,6 +31,7 @@ bno08x_accel_t latest_lin_accel_data;
 bno08x_magf_t latest_mag_cal_quality;
 latest_position_t latest_position = {0.0, 0.0, 0.0};
 latest_lin_velocity_t latest_velocity = {0.0, 0.0, 0.0}; // Initialize velocity to 0
+kalman_attitude_deg_t latest_kalman_attitude_deg = {0.0, 0.0, 0.0};
 gps_position_t latest_gps_position = {0.0, 0.0, 0.0};
 u_pos_t U_pos = {0.0f, 0.0f};
 u_hov_t U_hov = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};

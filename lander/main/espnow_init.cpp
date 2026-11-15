@@ -8,6 +8,7 @@
 #include "comms/comm.h"
 #include "motor_init.hpp"
 #include "i2c/bmp390.hpp"
+#include "current_sense.hpp"
 #include <cstring>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -15,8 +16,9 @@
 
 static const char *TAG = "ESP_NOW_SENDER";
 
-//MAC address of the receiver
-static uint8_t receiver_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; //Broadcast address
+// Broadcast address: used only until the ground station's unicast MAC has been
+// learned from one of its commands (see WIFI::get_peer_mac()).
+static uint8_t receiver_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 //Flow control variables
 static std::atomic<bool> send_pending(false);
@@ -145,12 +147,29 @@ void esp_now_send_data() {
     data.pos_z     = (float)latest_position.z;
     
     data.pressure  = (float)pressure;
+    data.current_a = latest_current_a;
+
+    data.vel_x     = (float)latest_velocity.x;
+    data.vel_y     = (float)latest_velocity.y;
+    data.vel_z     = (float)latest_velocity.z;
+    data.altitude  = (float)altitude;
+    data.est_roll  = (float)latest_kalman_attitude_deg.x;
+    data.est_pitch = (float)latest_kalman_attitude_deg.y;
+    data.est_yaw   = (float)latest_kalman_attitude_deg.z;
     
     portEXIT_CRITICAL(&global_spinlock);
 
+    // Prefer the learned unicast address: broadcast frames are not ACKed, so
+    // sending telemetry to FF:FF:FF:FF:FF:FF left the success statistics
+    // meaningless and hid a dying link.
+    const uint8_t *dest = WIFI::get_peer_mac();
+    if (dest == nullptr) {
+        dest = receiver_mac;  // broadcast until the ground station is heard
+    }
+
     send_pending = true;
     last_send_time = esp_timer_get_time();
-    esp_err_t result = esp_now_send(receiver_mac, (uint8_t *)&data, sizeof(data));
+    esp_err_t result = esp_now_send(dest, (uint8_t *)&data, sizeof(data));
     
     if (result != ESP_OK) {
         send_pending = false;

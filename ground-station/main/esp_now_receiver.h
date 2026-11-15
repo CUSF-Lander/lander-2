@@ -18,8 +18,16 @@ extern "C" {
 void esp_now_advanced_recv_callback(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len);
 
 /**
+ * @brief ESP-NOW transmit status callback (reports real delivery of commands)
+ *
+ * @param tx_info Information about the transmission
+ * @param status ESP-NOW send status
+ */
+void esp_now_send_status_cb(const wifi_tx_info_t *tx_info, esp_now_send_status_t status);
+
+/**
  * @brief Reset receiver statistics
- * 
+ *
  * @return ESP_OK on success
  */
 esp_err_t esp_now_receiver_stats_reset(void);
